@@ -7,9 +7,9 @@ import Lancamentos from "./Lancamentos";
 import Relatorios from "./Relatorios";
 import Metas from "./Metas";
 import Perfil from "./Perfil";
+import Paywall from "./Paywall";
 
 function helloByHour(h) {
-  // ✅ Bom dia 05–11, Boa tarde 12–17, Boa noite 18–04
   if (h >= 5 && h < 12) return "Bom dia";
   if (h >= 12 && h < 18) return "Boa tarde";
   return "Boa noite";
@@ -25,8 +25,13 @@ function useIsMobile(max = 720) {
   return is;
 }
 
+const CHECKOUT_URL = import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "#";
+
 export default function App() {
   const [user, setUser] = useState(undefined);
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
   const [tab, setTab] = useState("dashboard");
   const isMobile = useIsMobile();
 
@@ -35,48 +40,94 @@ export default function App() {
     return saved === "light" ? "light" : "dark";
   });
 
-  const [displayName, setDisplayName] = useState("");
-
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("banca_theme", theme);
   }, [theme]);
 
+  // AUTH
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
+    });
+
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
     });
+
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
 
+  // PROFILE (assinatura)
   useEffect(() => {
     async function loadProfile() {
-      if (!user?.id) return;
-      const { data } = await supabase
+      if (!user?.id) {
+        setProfile(null);
+        setLoadingProfile(false);
+        return;
+      }
+
+      setLoadingProfile(true);
+
+      const { data, error } = await supabase
         .from("profiles")
-        .select("display_name")
-        .eq("user_id", user.id)
+        .select("display_name, subscription_status")
+        .eq("id", user.id)
         .maybeSingle();
-      setDisplayName(data?.display_name || "");
+
+      if (!error) setProfile(data || null);
+      setLoadingProfile(false);
     }
+
     loadProfile();
   }, [user?.id]);
 
+  const displayName = profile?.display_name || "";
+
   const saudacao = useMemo(() => {
-    const h = new Date().getHours(); // pega a hora do PC do usuário
+    const h = new Date().getHours();
     const hi = helloByHour(h);
-    const nm = (displayName || "").trim();
-    return nm ? `${hi}, ${nm}!` : `${hi}!`;
+    return displayName ? `${hi}, ${displayName}!` : `${hi}!`;
   }, [displayName]);
+
+  const assinaturaAtiva = profile?.subscription_status === "active";
 
   async function sair() {
     await supabase.auth.signOut();
   }
 
-  if (user === undefined) return <div className="container"><div className="muted">Carregando...</div></div>;
+  // ====== ESTADOS ======
+  if (user === undefined) {
+    return (
+      <div className="container">
+        <div className="muted">Carregando...</div>
+      </div>
+    );
+  }
+
   if (!user) return <Login />;
 
+  if (loadingProfile) {
+    return (
+      <div className="container">
+        <div className="muted">Verificando assinatura...</div>
+      </div>
+    );
+  }
+
+  // 🚫 PAYWALL
+  if (!assinaturaAtiva) {
+    return (
+      <Paywall
+        displayName={displayName}
+        status={profile?.subscription_status || "inactive"}
+        onLogout={sair}
+        checkoutUrl={CHECKOUT_URL}
+      />
+    );
+  }
+
+  // ✅ APP LIBERADO
   return (
     <div>
       <div className="container">
@@ -99,7 +150,6 @@ export default function App() {
               {theme === "dark" ? "Modo claro" : "Modo escuro"}
             </button>
 
-            {/* ✅ Perfil só “bonequinho” */}
             <button className={"btn " + (tab === "perfil" ? "primary" : "")} onClick={() => setTab("perfil")} title="Perfil">
               👤
             </button>
@@ -109,20 +159,20 @@ export default function App() {
         </div>
       </div>
 
-      {tab === "dashboard" ? <Dashboard user={user} /> : null}
-      {tab === "lancamentos" ? <Lancamentos user={user} /> : null}
-      {tab === "relatorios" ? <Relatorios user={user} /> : null}
-      {tab === "metas" ? <Metas user={user} /> : null}
-      {tab === "perfil" ? <Perfil user={user} onLogout={sair} /> : null}
+      {tab === "dashboard" && <Dashboard user={user} />}
+      {tab === "lancamentos" && <Lancamentos user={user} />}
+      {tab === "relatorios" && <Relatorios user={user} />}
+      {tab === "metas" && <Metas user={user} />}
+      {tab === "perfil" && <Perfil user={user} onLogout={sair} />}
 
-      {isMobile ? (
+      {isMobile && (
         <div className="mobilebar">
           <button className={"mitem " + (tab === "dashboard" ? "active" : "")} onClick={() => setTab("dashboard")}>Dashboard</button>
           <button className={"mitem " + (tab === "lancamentos" ? "active" : "")} onClick={() => setTab("lancamentos")}>Lançamentos</button>
           <button className={"mitem " + (tab === "relatorios" ? "active" : "")} onClick={() => setTab("relatorios")}>Relatórios</button>
           <button className={"mitem " + (tab === "metas" ? "active" : "")} onClick={() => setTab("metas")}>Metas</button>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
