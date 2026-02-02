@@ -1,92 +1,98 @@
 import { createClient } from "@supabase/supabase-js";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false });
+  if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
   try {
-    const body = req.body || {};
-
-    // 1) valida token (Kiwify permite configurar um "token" no webhook) :contentReference[oaicite:2]{index=2}
-    const expected = process.env.KIWIFY_WEBHOOK_TOKEN;
-    const received =
-      (req.headers["x-kiwify-token"] || req.headers["x-webhook-token"] || "").toString() ||
-      (body.token ? String(body.token) : "");
-
-    if (!expected || received !== expected) {
-      return res.status(401).json({ ok: false, error: "token inválido" });
+    const token = req.query.token;
+    if (!token || token !== process.env.KIWIFY_WEBHOOK_TOKEN) {
+      return res.status(401).json({ error: "invalid_token" });
     }
 
-    // 2) evento (o nome exato pode variar no payload; tratamos com fallback)
-    const event =
-      body.trigger || body.event || body.type || body.action || "";
-
-    // 3) tenta achar email em vários lugares comuns
-    const email =
-      body?.customer?.email ||
-      body?.buyer?.email ||
-      body?.purchase?.email ||
-      body?.data?.customer?.email ||
-      body?.data?.buyer?.email ||
-      body?.data?.email ||
-      body?.email ||
-      "";
-
-    if (!email) {
-      return res.status(200).json({ ok: true, ignored: "sem email no payload" });
-    }
-
-    // 4) decide status
-    // eventos comuns listados pela Kiwify incluem compra aprovada/reembolso/chargeback/cancelamento etc. :contentReference[oaicite:3]{index=3}
-    let status = "inactive";
-    if (event === "compra_aprovada" || event === "subscription_renewed") status = "active";
-    if (event === "subscription_late") status = "past_due";
-    if (event === "subscription_canceled") status = "canceled";
-    if (event === "compra_reembolsada" || event === "chargeback") status = "inactive";
-
-    const supabase = createClient(
+    const supabaseAdmin = createClient(
       process.env.VITE_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // 5) grava “liberação por email” (pra quem paga antes de cadastrar)
-    if (status === "active") {
-      const { error: e1 } = await supabase
-        .from("access_grants")
-        .upsert(
-          { email, plan: "pro", subscription_status: "active" },
-          { onConflict: "email" }
-        );
-      if (e1) throw e1;
-    } else {
-      // se não estiver ativo, remove grant (pra bloquear)
-      await supabase.from("access_grants").delete().eq("email", email);
+    const payload = req.body; // Vercel já parseia JSON
+    const event = payload?.event || payload?.type || payload?.name;
+
+    // Tenta pegar email do comprador de vários jeitos (Kiwify pode variar)
+    const email =
+      payload?.customer?.email ||
+      payload?.buyer?.email ||
+      payload?.data?.customer?.email ||
+      payload?.data?.buyer?.email ||
+      payload?.email ||
+      null;
+
+    if (!email) {
+      return res.status(200).json({ ok: true, note: "no_email_in_payload" });
     }
 
-    // 6) se já existir profile com esse email, atualiza na hora
-    // (note: precisa email salvo no profile)
-    const { data: prof, error: e2 } = await supabase
+    // procura profile pelo email
+    const { data: profile, error: pErr } = await supabaseAdmin
       .from("profiles")
-      .select("id,email")
+      .select("user_id,email")
       .eq("email", email)
       .maybeSingle();
 
-    if (!e2 && prof?.id) {
-      const { error: e3 } = await supabase
-        .from("profiles")
-        .update({
-          subscription_status:
-            status === "active" ? "active" :
-            status === "past_due" ? "past_due" :
-            status === "canceled" ? "canceled" : "inactive",
-          plan: "pro",
-        })
-        .eq("id", prof.id);
-
-      if (e3) throw e3;
+    if (pErr) throw pErr;
+    if (!profile?.user_id) {
+      // não achou usuário com esse email — não falha, só loga ok
+      return res.status(200).json({ ok: true, note: "user_not_found_for_email" });
     }
 
+    // Regras simples:
+    // - Eventos de pagamento aprovado / assinatura ativa => libera premium
+    // - Cancelamento/atraso => remove premium
+    //
+    // Ajuste os nomes de evento conforme aparecer no LOG do webhook no Kiwify.
+    const isPaid =
+      String(event || "").toLowerCase().includes("aprov") ||
+      String(event || "").toLowerCase().includes("paid") ||
+      String(event || "").toLowerCase().includes("approved") ||
+      String(event || "").toLowerCase().includes("subscription_active");
+
+    const isCanceled =
+      String(event || "").toLowerCase().includes("cancel") ||
+      String(event || "").toLowerCase().includes("refun") ||
+      String(event || "").toLowerCase().includes("charge_failed") ||
+      String(event || "").toLowerCase().includes("subscription_inactive");
+
+    let patch = null;
+
+    if (isPaid) {
+      patch = {
+        is_premium: true,
+        plan_status: "active",
+        // opcional: se vier uma data no payload, use ela. Senão, deixa null.
+        premium_until: payload?.data?.premium_until || null,
+        kiwify_customer_email: email,
+        kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
+      };
+    } else if (isCanceled) {
+      patch = {
+        is_premium: false,
+        plan_status: "inactive",
+        premium_until: null,
+        kiwify_customer_email: email,
+        kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
+      };
+    } else {
+      // evento que não nos interessa ainda
+      return res.status(200).json({ ok: true, note: "ignored_event", event });
+    }
+
+    const { error: uErr } = await supabaseAdmin
+      .from("profiles")
+      .update(patch)
+      .eq("user_id", profile.user_id);
+
+    if (uErr) throw uErr;
+
     return res.status(200).json({ ok: true });
-  } catch (err) {
-    return res.status(200).json({ ok: false, error: err?.message || "erro" });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || "webhook_error" });
   }
 }
