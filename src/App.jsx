@@ -126,8 +126,9 @@ export default function App() {
   });
 
   const [displayName, setDisplayName] = useState("");
-  const [isPremium, setIsPremium] = useState(false);
-  const [planStatus, setPlanStatus] = useState("inactive");
+  const [plan, setPlan] = useState("free");
+  const [subscriptionStatus, setSubscriptionStatus] = useState("inactive");
+  const [paidUntil, setPaidUntil] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   useEffect(() => {
@@ -153,14 +154,15 @@ export default function App() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("display_name,is_premium,plan_status,premium_until")
-        .eq("user_id", user.id)
+        .select("display_name,plan,subscription_status,paid_until")
+        .eq("id", user.id)
         .maybeSingle();
 
       if (!error) {
         setDisplayName(data?.display_name || "");
-        setIsPremium(!!data?.is_premium);
-        setPlanStatus(data?.plan_status || "inactive");
+        setPlan(data?.plan || "free");
+        setSubscriptionStatus(data?.subscription_status || "inactive");
+        setPaidUntil(data?.paid_until ?? null);
       }
 
       setLoadingProfile(false);
@@ -169,13 +171,14 @@ export default function App() {
         .channel("profile-premium-" + user.id)
         .on(
           "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "profiles", filter: `user_id=eq.${user.id}` },
+          { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
           (payload) => {
             const next = payload?.new;
             if (!next) return;
             setDisplayName(next.display_name || "");
-            setIsPremium(!!next.is_premium);
-            setPlanStatus(next.plan_status || "inactive");
+            setPlan(next.plan || "free");
+            setSubscriptionStatus(next.subscription_status || "inactive");
+            setPaidUntil(next.paid_until ?? null);
           }
         )
         .subscribe();
@@ -194,6 +197,13 @@ export default function App() {
     const nm = (displayName || "").trim();
     return nm ? `${hi}, ${nm}!` : `${hi}!`;
   }, [displayName]);
+
+  const isPremium = useMemo(() => {
+    if (subscriptionStatus !== "active") return false;
+    if (!paidUntil) return true;
+    const t = new Date(paidUntil).getTime();
+    return Number.isFinite(t) ? t > Date.now() : true;
+  }, [subscriptionStatus, paidUntil]);
 
   async function sair() {
     await supabase.auth.signOut();
@@ -273,10 +283,13 @@ export default function App() {
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
             <span className="badge">
-              Status: <b>{planStatus === "active" ? "Ativa" : "Inativa"}</b>
+              Status: <b>{subscriptionStatus === "active" ? "Ativa" : "Inativa"}</b>
             </span>
             <span className="badge">
               Conta: <b>{user.email}</b>
+            </span>
+            <span className="badge">
+              Plano: <b>{plan || "free"}</b>
             </span>
           </div>
 
