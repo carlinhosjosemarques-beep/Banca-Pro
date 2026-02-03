@@ -1,13 +1,9 @@
 /* app.css — manter leve e SEM brigar com o index.css */
 
-/* garante base sem “faixa” e sem sobrescrever fundo do tema */
 html, body, #root { height: 100%; }
 body { margin: 0; background: transparent !important; }
 
-/* se você usa alguma classe extra específica do App, pode deixar aqui.
-   por enquanto não precisa repetir nada (tokens, botões, cards, etc). */
-
-/* utilzinho opcional (se você usa hideOnMobile no App.jsx) */
+/* utilzinho (você usa hideOnMobile no App.jsx) */
 @media (max-width: 720px){
   .hideOnMobile{ display: none !important; }
 }
