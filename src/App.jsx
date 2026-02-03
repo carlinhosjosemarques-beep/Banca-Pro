@@ -33,6 +33,88 @@ function openCheckout() {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function LogoMark() {
+  return (
+    <svg
+      width="34"
+      height="34"
+      viewBox="0 0 64 64"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <defs>
+        <linearGradient id="bp_g1" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#7C3AED" />
+          <stop offset="1" stopColor="#22D3EE" />
+        </linearGradient>
+        <linearGradient id="bp_g2" x1="18" y1="12" x2="46" y2="52" gradientUnits="userSpaceOnUse">
+          <stop stopColor="rgba(255,255,255,.95)" />
+          <stop offset="1" stopColor="rgba(255,255,255,.65)" />
+        </linearGradient>
+      </defs>
+
+      <rect x="6" y="6" width="52" height="52" rx="16" fill="url(#bp_g1)" />
+      <path
+        d="M22 42c0-11 8-20 20-20"
+        fill="none"
+        stroke="url(#bp_g2)"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M26 44c0-8 6-14 14-14"
+        fill="none"
+        stroke="rgba(255,255,255,.9)"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <circle cx="42" cy="22" r="4" fill="rgba(255,255,255,.9)" />
+    </svg>
+  );
+}
+
+function IconSun() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path
+        fill="currentColor"
+        d="M12 18a6 6 0 1 0 0-12a6 6 0 0 0 0 12Zm0-16a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 18a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM4 11a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1Zm18 0a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1ZM5.64 5.64a1 1 0 0 1 1.41 0l.71.71A1 1 0 1 1 6.35 7.76l-.71-.71a1 1 0 0 1 0-1.41Zm12.02 12.02a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41ZM18.36 5.64a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0ZM6.35 16.24a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41Z"
+      />
+    </svg>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path fill="currentColor" d="M21 14.5A8.5 8.5 0 0 1 9.5 3a7 7 0 1 0 11.5 11.5Z" />
+    </svg>
+  );
+}
+
+function IconUser() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path
+        fill="currentColor"
+        d="M12 12a4 4 0 1 0-4-4a4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"
+      />
+    </svg>
+  );
+}
+
+function IconLogout() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
+      <path
+        fill="currentColor"
+        d="M10 17a1 1 0 0 1-1-1v-1H5a1 1 0 0 1 0-2h4v-2a1 1 0 0 1 1.7-.7l4 4a1 1 0 0 1 0 1.4l-4 4A1 1 0 0 1 10 17Zm8-13H12a1 1 0 1 0 0 2h6v14h-6a1 1 0 1 0 0 2h6a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Z"
+      />
+    </svg>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [tab, setTab] = useState("dashboard");
@@ -49,7 +131,7 @@ export default function App() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("banca_theme", theme);
   }, [theme]);
 
@@ -117,6 +199,9 @@ export default function App() {
     await supabase.auth.signOut();
   }
 
+  const themeLabel = theme === "dark" ? "Modo claro" : "Modo escuro";
+  const ThemeIcon = theme === "dark" ? IconSun : IconMoon;
+
   if (user === undefined) {
     return (
       <div className="container">
@@ -142,7 +227,9 @@ export default function App() {
       <div className="container" style={{ paddingTop: 24 }}>
         <div className="topbar" style={{ marginBottom: 18 }}>
           <div className="brand">
-            <div className="logo" />
+            <div className="logo" aria-hidden="true">
+              <LogoMark />
+            </div>
             <div>
               <h1>Banca Pro</h1>
               <p>
@@ -152,11 +239,28 @@ export default function App() {
           </div>
 
           <div className="nav">
-            <button className="btn" onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}>
-              {theme === "dark" ? "Modo claro" : "Modo escuro"}
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              title={themeLabel}
+              aria-label={themeLabel}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <ThemeIcon />
+              <span>{themeLabel}</span>
             </button>
-            <button className="btn danger" onClick={sair}>
-              Sair
+
+            <button
+              className="btn danger"
+              type="button"
+              onClick={sair}
+              title="Sair"
+              aria-label="Sair"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <IconLogout />
+              <span>Sair</span>
             </button>
           </div>
         </div>
@@ -181,10 +285,15 @@ export default function App() {
           </div>
 
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <button className="btn primary" onClick={openCheckout}>
+            <button className="btn primary" type="button" onClick={openCheckout}>
               Assinar agora
             </button>
-            <button className="btn" onClick={() => window.location.reload()} title="Se você já pagou, clique aqui para checar novamente">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => window.location.reload()}
+              title="Se você já pagou, clique aqui para checar novamente"
+            >
               Já paguei
             </button>
           </div>
@@ -204,7 +313,9 @@ export default function App() {
       <div className="container">
         <div className="topbar">
           <div className="brand">
-            <div className="logo" />
+            <div className="logo" aria-hidden="true">
+              <LogoMark />
+            </div>
             <div>
               <h1>Banca Pro</h1>
               <p>
@@ -214,29 +325,53 @@ export default function App() {
           </div>
 
           <div className="nav">
-            <button className={"tab " + (tab === "dashboard" ? "active" : "")} onClick={() => setTab("dashboard")}>
+            <button className={"tab " + (tab === "dashboard" ? "active" : "")} type="button" onClick={() => setTab("dashboard")}>
               Dashboard
             </button>
-            <button className={"tab " + (tab === "lancamentos" ? "active" : "")} onClick={() => setTab("lancamentos")}>
+            <button className={"tab " + (tab === "lancamentos" ? "active" : "")} type="button" onClick={() => setTab("lancamentos")}>
               Lançamentos
             </button>
-            <button className={"tab " + (tab === "relatorios" ? "active" : "")} onClick={() => setTab("relatorios")}>
+            <button className={"tab " + (tab === "relatorios" ? "active" : "")} type="button" onClick={() => setTab("relatorios")}>
               Relatórios
             </button>
-            <button className={"tab " + (tab === "metas" ? "active" : "")} onClick={() => setTab("metas")}>
+            <button className={"tab " + (tab === "metas" ? "active" : "")} type="button" onClick={() => setTab("metas")}>
               Metas
             </button>
 
-            <button className="btn" onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}>
-              {theme === "dark" ? "Modo claro" : "Modo escuro"}
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              title={themeLabel}
+              aria-label={themeLabel}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <ThemeIcon />
+              <span>{themeLabel}</span>
             </button>
 
-            <button className={"btn " + (tab === "perfil" ? "primary" : "")} onClick={() => setTab("perfil")} title="Perfil">
-              👤
+            <button
+              className={"btn " + (tab === "perfil" ? "primary" : "")}
+              type="button"
+              onClick={() => setTab("perfil")}
+              title="Perfil"
+              aria-label="Perfil"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <IconUser />
+              <span className="hideOnMobile">Perfil</span>
             </button>
 
-            <button className="btn danger" onClick={sair}>
-              Sair
+            <button
+              className="btn danger"
+              type="button"
+              onClick={sair}
+              title="Sair"
+              aria-label="Sair"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              <IconLogout />
+              <span className="hideOnMobile">Sair</span>
             </button>
           </div>
         </div>
@@ -250,16 +385,16 @@ export default function App() {
 
       {isMobile ? (
         <div className="mobilebar">
-          <button className={"mitem " + (tab === "dashboard" ? "active" : "")} onClick={() => setTab("dashboard")}>
+          <button className={"mitem " + (tab === "dashboard" ? "active" : "")} type="button" onClick={() => setTab("dashboard")}>
             Dashboard
           </button>
-          <button className={"mitem " + (tab === "lancamentos" ? "active" : "")} onClick={() => setTab("lancamentos")}>
+          <button className={"mitem " + (tab === "lancamentos" ? "active" : "")} type="button" onClick={() => setTab("lancamentos")}>
             Lançamentos
           </button>
-          <button className={"mitem " + (tab === "relatorios" ? "active" : "")} onClick={() => setTab("relatorios")}>
+          <button className={"mitem " + (tab === "relatorios" ? "active" : "")} type="button" onClick={() => setTab("relatorios")}>
             Relatórios
           </button>
-          <button className={"mitem " + (tab === "metas" ? "active" : "")} onClick={() => setTab("metas")}>
+          <button className={"mitem " + (tab === "metas" ? "active" : "")} type="button" onClick={() => setTab("metas")}>
             Metas
           </button>
         </div>

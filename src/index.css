@@ -1,4 +1,4 @@
-/* ====== BASE / FUNDO (sem faixa no fim) ====== */
+/* ====== BASE / FUNDO ====== */
 html, body, #root { height: 100%; }
 
 :root{
@@ -21,6 +21,10 @@ html, body, #root { height: 100%; }
   --pageBg2: rgba(0, 200, 255, .12);
   --pageBase: rgb(8, 12, 18);
   --pageBase2: rgb(8, 12, 18);
+
+  /* ✅ cores do select (por tema) */
+  --selectBg: rgb(12, 16, 24);
+  --selectText: rgba(255,255,255,.92);
 }
 
 html[data-theme="light"], :root[data-theme="light"]{
@@ -33,11 +37,13 @@ html[data-theme="light"], :root[data-theme="light"]{
   --input: rgba(0,0,0,.06);
   --input2: rgba(0,0,0,.10);
 
-  /* ✅ fundo claro DE VERDADE (não fica preto) */
   --pageBg1: rgba(120, 90, 255, .16);
   --pageBg2: rgba(0, 160, 255, .10);
   --pageBase: rgb(245, 247, 252);
   --pageBase2: rgb(245, 247, 252);
+
+  --selectBg: #ffffff;
+  --selectText: rgba(10,14,20,.92);
 }
 
 /* ✅ Fundo controlado pelo theme */
@@ -121,7 +127,7 @@ h1,h2,h3{ margin: 0; color: var(--text); }
   justify-content: flex-end;
 }
 
-/* ====== LOGO BP (substitui o quadrado roxo) ====== */
+/* ====== LOGO ====== */
 .logo{
   width: 56px;
   height: 56px;
@@ -161,17 +167,13 @@ html[data-theme="light"] .logo{
   outline: none;
 }
 
-.input::placeholder{ color: rgba(255,255,255,.45); }
-html[data-theme="light"] .input::placeholder{ color: rgba(0,0,0,.45); }
+/* ✅ placeholder respeita tema */
+.input::placeholder{ color: color-mix(in srgb, var(--text) 45%, transparent); }
 
+/* ✅ select e option respeitam tema */
 select, option{
-  background: rgb(12, 16, 24);
-  color: rgba(255,255,255,.92);
-}
-html[data-theme="light"] select,
-html[data-theme="light"] option{
-  background: #fff;
-  color: rgba(10,14,20,.92);
+  background: var(--selectBg);
+  color: var(--selectText);
 }
 
 /* ====== BOTÕES ====== */
@@ -184,7 +186,6 @@ html[data-theme="light"] option{
   cursor: pointer;
   transition: transform .08s ease, background .2s ease, border-color .2s ease;
 }
-
 .btn:hover{ background: rgba(255,255,255,.10); }
 .btn:active{ transform: translateY(1px); }
 
@@ -227,7 +228,6 @@ html[data-theme="light"] option{
   border-radius: 16px;
   border: 1px solid var(--line);
 }
-
 .table thead th{
   font-size: 12px;
   text-transform: none;
@@ -236,7 +236,6 @@ html[data-theme="light"] option{
   color: var(--muted);
   background: rgba(255,255,255,.03);
 }
-
 .table tbody td{
   padding: 12px;
   border-top: 1px solid var(--line);
