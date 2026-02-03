@@ -3,25 +3,11 @@ html, body, #root {
   height: 100%;
 }
 
-body {
-  margin: 0;
-  background: radial-gradient(1200px 600px at 30% -10%, rgba(120, 90, 255, .22), transparent 55%),
-              radial-gradient(900px 500px at 80% 0%, rgba(0, 200, 255, .12), transparent 60%),
-              linear-gradient(180deg, rgba(8, 12, 18, 1), rgba(8, 12, 18, 1));
-  color: var(--text);
-}
-
-/* o root sempre com o mesmo fundo pra não "vazar" cinza/branco */
-#root {
-  background: transparent;
-  min-height: 100%;
-}
-
-/* ====== THEME TOKENS ====== */
 :root {
   --text: rgba(255,255,255,.92);
   --muted: rgba(255,255,255,.60);
   --line: rgba(255,255,255,.08);
+
   --card: rgba(255,255,255,.04);
   --card2: rgba(255,255,255,.06);
   --shadow: 0 20px 80px rgba(0,0,0,.35);
@@ -33,19 +19,65 @@ body {
 
   --input: rgba(255,255,255,.06);
   --input2: rgba(255,255,255,.10);
+
+  /* fundos sólidos internos (para não “vazar”) */
+  --pagecardA: rgba(25, 30, 40, .92);
+  --pagecardB: rgba(18, 22, 30, .92);
+
+  --panel: rgba(255,255,255,.03);
 }
 
 html[data-theme="light"], :root[data-theme="light"] {
   --text: rgba(10, 14, 20, .92);
   --muted: rgba(10, 14, 20, .60);
   --line: rgba(10, 14, 20, .10);
+
   --card: rgba(255,255,255,.75);
   --card2: rgba(255,255,255,.92);
   --shadow: 0 20px 80px rgba(0,0,0,.18);
+
   --input: rgba(0,0,0,.06);
   --input2: rgba(0,0,0,.10);
+
+  /* fundos sólidos internos no light */
+  --pagecardA: rgba(255,255,255,.92);
+  --pagecardB: rgba(245, 247, 252, .92);
+
+  --panel: rgba(0,0,0,.03);
 }
 
+/* Fundo fixo: evita “faixa” e vazamento */
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 600px at 30% -10%, rgba(120, 90, 255, .22), transparent 55%),
+    radial-gradient(900px 500px at 80% 0%, rgba(0, 200, 255, .12), transparent 60%),
+    linear-gradient(180deg, rgb(8, 12, 18), rgb(8, 12, 18));
+  background-attachment: fixed;
+}
+
+html[data-theme="light"] {
+  background:
+    radial-gradient(1200px 600px at 30% -10%, rgba(120, 90, 255, .12), transparent 55%),
+    radial-gradient(900px 500px at 80% 0%, rgba(0, 200, 255, .08), transparent 60%),
+    linear-gradient(180deg, rgb(245, 247, 252), rgb(245, 247, 252));
+  background-attachment: fixed;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: transparent !important;
+  color: var(--text);
+}
+
+/* o root sempre com o mesmo fundo pra não "vazar" cinza/branco */
+#root {
+  background: transparent;
+  min-height: 100%;
+}
+
+/* ====== LAYOUT ====== */
 .container {
   width: min(1100px, calc(100% - 32px));
   margin: 0 auto;
@@ -67,6 +99,13 @@ html[data-theme="light"], :root[data-theme="light"] {
   box-shadow: var(--shadow);
   padding: 18px;
   backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+
+/* card principal do conteúdo: sólido no dark E no light */
+.container > .card {
+  background: linear-gradient(180deg, var(--pagecardA), var(--pagecardB)) !important;
+  backdrop-filter: blur(10px);
 }
 
 /* ====== TEXTOS ====== */
@@ -74,7 +113,7 @@ h1,h2,h3 { margin: 0; color: var(--text); }
 .muted { color: var(--muted); }
 .hr { height: 1px; background: var(--line); margin: 14px 0; }
 
-/* ====== INPUTS / SELECT (corrige dropdown feio) ====== */
+/* ====== INPUTS / SELECT ====== */
 .input, .select {
   width: 100%;
   background: linear-gradient(180deg, var(--input2), var(--input));
@@ -128,6 +167,9 @@ html[data-theme="light"] option {
   border-color: rgba(255,200,60,.35);
 }
 
+/* garante ícones sempre legíveis (herdam a cor do botão) */
+button svg { color: inherit; }
+
 /* ====== BADGES / DOTS ====== */
 .badge {
   display: inline-flex;
@@ -141,9 +183,14 @@ html[data-theme="light"] option {
   font-size: 12px;
 }
 
+html[data-theme="light"] .badge {
+  background: rgba(0,0,0,.03);
+}
+
 .dot { width: 8px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.35); }
 .dot.ok { background: rgba(0, 210, 140, 1); }
 .dot.warn { background: rgba(255, 200, 60, 1); }
+.dot.danger { background: rgba(255, 90, 110, 1); }
 
 /* ====== TABELA PREMIUM ====== */
 .table {
@@ -153,6 +200,7 @@ html[data-theme="light"] option {
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .table thead th {
@@ -162,6 +210,10 @@ html[data-theme="light"] option {
   padding: 12px;
   color: var(--muted);
   background: rgba(255,255,255,.03);
+}
+
+html[data-theme="light"] .table thead th {
+  background: rgba(0,0,0,.03);
 }
 
 .table tbody td {
@@ -189,6 +241,10 @@ html[data-theme="light"] option {
   box-shadow: 0 30px 80px rgba(0,0,0,.45);
 }
 
+html[data-theme="light"] .mobilebar {
+  background: rgba(255,255,255,.78);
+}
+
 .mitem {
   flex: 1;
   border-radius: 14px;
@@ -199,10 +255,15 @@ html[data-theme="light"] option {
   cursor: pointer;
 }
 
+html[data-theme="light"] .mitem {
+  background: rgba(0,0,0,.03);
+}
+
 .mitem.active {
   background: rgba(120,140,255,.22);
   border-color: rgba(120,140,255,.45);
 }
+
 /* ====== RELATORIOS premium ====== */
 .reportsPage {
   min-height: calc(100vh - 120px);
@@ -225,7 +286,7 @@ html[data-theme="light"] option {
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 14px;
-  background: rgba(255,255,255,.03);
+  background: var(--panel) !important;
 }
 
 .kpiTitle {
@@ -246,11 +307,11 @@ html[data-theme="light"] option {
   height: 260px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,.02);
+  background: var(--panel) !important;
   overflow: hidden;
 }
 
-/* Tabs (se ainda não tiver) */
+/* Tabs */
 .tab {
   background: rgba(255,255,255,.05);
   border: 1px solid var(--line);
@@ -259,39 +320,52 @@ html[data-theme="light"] option {
   padding: 10px 12px;
   cursor: pointer;
 }
+html[data-theme="light"] .tab {
+  background: rgba(0,0,0,.03);
+}
 .tab.active {
   background: rgba(120,140,255,.22);
   border-color: rgba(120,140,255,.45);
 }
 
-/* dot danger */
-.dot.danger { background: rgba(255, 90, 110, 1); }
-/* ====== CORREÇÃO DA FAIXA (background fixo + card mais sólido) ====== */
-html {
-  min-height: 100%;
-  background: radial-gradient(1200px 600px at 30% -10%, rgba(120, 90, 255, .22), transparent 55%),
-              radial-gradient(900px 500px at 80% 0%, rgba(0, 200, 255, .12), transparent 60%),
-              linear-gradient(180deg, rgb(8, 12, 18), rgb(8, 12, 18));
-  background-attachment: fixed;
-}
-
-body {
-  min-height: 100%;
-  background: transparent !important;
-}
-
-/* o card grande (container da página) fica mais "sólido" e não deixa o fundo vazar */
-.container > .card {
-  background: linear-gradient(180deg, rgba(25, 30, 40, .92), rgba(18, 22, 30, .92)) !important;
-  backdrop-filter: blur(10px);
-}
-
-/* caixas internas (ex: gráfico) também ficam sólidas */
-.chartBox, .kpi, .table {
-  background: rgba(255,255,255,.03) !important;
-}
-
-/* garante que nada "vaza" pela borda */
-.card, .chartBox {
+/* ====== LOGO / TOPBAR (arruma “quadrado roxo”) ====== */
+.logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* importante: NÃO desenha nada aqui */
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.topbar {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* opcional: esconder textos em botões no mobile */
+@media (max-width: 720px) {
+  .hideOnMobile { display: none; }
 }
