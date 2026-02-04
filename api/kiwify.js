@@ -1,110 +1,106 @@
 import { createClient } from "@supabase/supabase-js";
 
-function pickToken(req) {
-  const q = req.query?.token;
-  const h1 = req.headers["x-kiwify-token"];
-  const h2 = req.headers["kiwify-token"];
-  const h3 = req.headers["token"];
-  const h4 = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
-  return q || h1 || h2 || h3 || h4 || null;
-}
-
-function pickEmail(payload) {
-  return (
-    payload?.customer?.email ||
-    payload?.buyer?.email ||
-    payload?.data?.customer?.email ||
-    payload?.data?.buyer?.email ||
-    payload?.email ||
-    null
-  );
-}
-
-function pickEvent(payload) {
-  return payload?.event || payload?.type || payload?.name || "";
-}
-
-function normalizeEvent(ev) {
-  return String(ev || "").toLowerCase();
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
   }
 
   try {
-    const token = pickToken(req);
+    const token = req.query.token;
     if (!token || token !== process.env.KIWIFY_WEBHOOK_TOKEN) {
-      return res.status(401).json({
-        error: "invalid_token",
-        got: token ? "present" : "missing",
-        hint: "Use ?token= na URL do webhook ou envie token por header",
+      return res.status(401).json({ error: "invalid_token" });
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      return res.status(500).json({
+        error: "missing_env",
+        note: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set",
       });
     }
 
-    const supabaseAdmin = createClient(
-      process.env.VITE_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
-    const payload = req.body;
-    const event = normalizeEvent(pickEvent(payload));
-    const email = pickEmail(payload);
+    const payload = req.body || {};
+    const event = payload?.event || payload?.type || payload?.name || "";
+
+    const email =
+      payload?.customer?.email ||
+      payload?.buyer?.email ||
+      payload?.data?.customer?.email ||
+      payload?.data?.buyer?.email ||
+      payload?.email ||
+      null;
 
     if (!email) {
       return res.status(200).json({ ok: true, note: "no_email_in_payload" });
     }
 
-    // procura profile pelo email
     const { data: profile, error: pErr } = await supabaseAdmin
       .from("profiles")
-      .select("id,email,plan,subscription_status")
+      .select("user_id,email")
       .eq("email", email)
       .maybeSingle();
 
     if (pErr) throw pErr;
-    if (!profile?.id) {
-      return res.status(200).json({ ok: true, note: "user_not_found_for_email", email });
+
+    if (!profile?.user_id) {
+      return res.status(200).json({ ok: true, note: "user_not_found_for_email" });
     }
 
-    // ✅ Eventos do Kiwify (pela sua tela):
-    // Compra aprovada / Assinatura renovada => libera
-    // Compra recusada / Reembolso / Chargeback / Assinatura cancelada / Assinatura atrasada => bloqueia
+    const ev = String(event).toLowerCase();
+
     const isPaid =
-      event.includes("compra_aprovada") ||
-      event.includes("assinatura_renovada") ||
-      event.includes("paid") ||
-      event.includes("approved") ||
-      event.includes("aprov");
+      ev.includes("aprov") ||
+      ev.includes("paid") ||
+      ev.includes("approved") ||
+      ev.includes("compra_aprovada") ||
+      ev.includes("assinatura_renovada") ||
+      ev.includes("subscription_active");
 
-    const isBlocked =
-      event.includes("compra_recusada") ||
-      event.includes("reembolso") ||
-      event.includes("chargeback") ||
-      event.includes("assinatura_cancelada") ||
-      event.includes("assinatura_atrasada") ||
-      event.includes("cancel") ||
-      event.includes("refund") ||
-      event.includes("charge_failed") ||
-      event.includes("inactive");
+    const isCanceled =
+      ev.includes("cancel") ||
+      ev.includes("reemb") ||
+      ev.includes("refun") ||
+      ev.includes("chargeback") ||
+      ev.includes("atrasad") ||
+      ev.includes("charge_failed") ||
+      ev.includes("subscription_inactive") ||
+      ev.includes("assinatura_cancelada") ||
+      ev.includes("assinatura_atrasada");
 
-    if (!isPaid && !isBlocked) {
+    if (!isPaid && !isCanceled) {
       return res.status(200).json({ ok: true, note: "ignored_event", event });
     }
 
     const patch = isPaid
-      ? { plan: "pro", subscription_status: "active" }
-      : { plan: "free", subscription_status: "inactive" };
+      ? {
+          is_premium: true,
+          plan_status: "active",
+          premium_until: payload?.data?.premium_until || null,
+          kiwify_customer_email: email,
+          kiwify_subscription_id:
+            payload?.subscription_id || payload?.data?.subscription_id || null,
+        }
+      : {
+          is_premium: false,
+          plan_status: "inactive",
+          premium_until: null,
+          kiwify_customer_email: email,
+          kiwify_subscription_id:
+            payload?.subscription_id || payload?.data?.subscription_id || null,
+        };
 
     const { error: uErr } = await supabaseAdmin
       .from("profiles")
       .update(patch)
-      .eq("id", profile.id);
+      .eq("user_id", profile.user_id);
 
     if (uErr) throw uErr;
 
-    return res.status(200).json({ ok: true, event, email, patch });
+    return res.status(200).json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }
