@@ -84,7 +84,6 @@ export default function Metas({ user }) {
   const [metaDays, setMetaDays] = useState([]);
   const [loadingDays, setLoadingDays] = useState(false);
 
-  // create form
   const [titulo, setTitulo] = useState("Minha Meta");
   const [startDate, setStartDate] = useState(() => todayYMD());
   const [endDate, setEndDate] = useState(() => todayYMD());
@@ -104,12 +103,10 @@ export default function Metas({ user }) {
   const [stopWin, setStopWin] = useState(0);
   const [stopLoss, setStopLoss] = useState(0);
 
-  // inline input per row (green/loss + editar valor)
   const [editingRowId, setEditingRowId] = useState(null);
-  const [editingStatus, setEditingStatus] = useState(null); // "green" | "loss"
+  const [editingStatus, setEditingStatus] = useState(null);
   const [editingValue, setEditingValue] = useState("");
 
-  // editar meta
   const [editingMeta, setEditingMeta] = useState(false);
 
   const [editTitulo, setEditTitulo] = useState("");
@@ -361,14 +358,15 @@ export default function Metas({ user }) {
   const bancaAlvo = useMemo(() => {
     if (!selectedMeta) return 0;
     const bb = num(selectedMeta.banca_base);
-    if (selectedMeta.goal_type === "final_target") return num(selectedMeta.final_target);
+    if (selectedMeta.goal_type === "final_target")
+      return num(selectedMeta.final_target);
     return bb + plannedTotal;
   }, [selectedMeta, plannedTotal]);
 
-  const remaining = useMemo(
-    () => plannedTotal - realizedTotal,
-    [plannedTotal, realizedTotal]
-  );
+  const remaining = useMemo(() => plannedTotal - realizedTotal, [
+    plannedTotal,
+    realizedTotal,
+  ]);
 
   const sugestaoMetaAberta = useMemo(() => {
     if (!selectedMeta || selectedMeta.goal_type !== "pct") return null;
@@ -497,10 +495,12 @@ export default function Metas({ user }) {
             ? Math.max(1, parseInt(editEntradasDia || 1, 10))
             : null,
         tem_empate: editGoalType === "pct" ? !!editTemEmpate : false,
-        pct_empate: editGoalType === "pct" && editTemEmpate ? num(editPctEmpate) : null,
+        pct_empate:
+          editGoalType === "pct" && editTemEmpate ? num(editPctEmpate) : null,
 
         daily_value: editGoalType === "daily_fixed" ? num(editDailyValue) : null,
-        final_target: editGoalType === "final_target" ? num(editFinalTarget) : null,
+        final_target:
+          editGoalType === "final_target" ? num(editFinalTarget) : null,
 
         stop_win: num(editStopWin) || null,
         stop_loss: num(editStopLoss) || null,
@@ -515,7 +515,6 @@ export default function Metas({ user }) {
       if (error) throw error;
 
       await loadAll({ keepBancaBase: true });
-
       setEditingMeta(false);
     } catch (e) {
       setErr(e?.message || "Erro ao editar meta");
@@ -552,12 +551,8 @@ export default function Metas({ user }) {
 
         <h2>Criar nova meta</h2>
 
-        <form
-          onSubmit={createMeta}
-          className="row"
-          style={{ alignItems: "flex-end" }}
-        >
-          <div className="field" style={{ minWidth: 220, flex: 1 }}>
+        <form onSubmit={createMeta} className="formGrid">
+          <div className="col-5 field">
             <div className="label">Título</div>
             <input
               className="input"
@@ -566,7 +561,7 @@ export default function Metas({ user }) {
             />
           </div>
 
-          <div className="field">
+          <div className="col-2 field">
             <div className="label">Início</div>
             <input
               className="input"
@@ -576,7 +571,7 @@ export default function Metas({ user }) {
             />
           </div>
 
-          <div className="field">
+          <div className="col-2 field">
             <div className="label">Término</div>
             <input
               className="input"
@@ -586,7 +581,7 @@ export default function Metas({ user }) {
             />
           </div>
 
-          <div className="field" style={{ minWidth: 220 }}>
+          <div className="col-3 field">
             <div className="label">Tipo de meta</div>
             <select
               className="select"
@@ -599,7 +594,7 @@ export default function Metas({ user }) {
             </select>
           </div>
 
-          <div className="field">
+          <div className="col-3 field">
             <div className="label">Banca base</div>
             <input
               className="input"
@@ -611,7 +606,7 @@ export default function Metas({ user }) {
 
           {goalType === "pct" ? (
             <>
-              <div className="field">
+              <div className="col-2 field">
                 <div className="label">% ao dia</div>
                 <input
                   className="input"
@@ -621,7 +616,7 @@ export default function Metas({ user }) {
                 />
               </div>
 
-              <div className="field">
+              <div className="col-2 field">
                 <div className="label">Entradas por dia</div>
                 <input
                   className="input"
@@ -631,7 +626,7 @@ export default function Metas({ user }) {
                 />
               </div>
 
-              <div className="field" style={{ minWidth: 220 }}>
+              <div className="col-3 field">
                 <div className="label">Proteção de empate?</div>
                 <select
                   className="select"
@@ -644,7 +639,7 @@ export default function Metas({ user }) {
               </div>
 
               {temEmpate ? (
-                <div className="field">
+                <div className="col-2 field">
                   <div className="label">% para cobrir empate</div>
                   <input
                     className="input"
@@ -658,7 +653,7 @@ export default function Metas({ user }) {
           ) : null}
 
           {goalType === "daily_fixed" ? (
-            <div className="field">
+            <div className="col-3 field">
               <div className="label">Valor/dia</div>
               <input
                 className="input"
@@ -670,7 +665,7 @@ export default function Metas({ user }) {
           ) : null}
 
           {goalType === "final_target" ? (
-            <div className="field">
+            <div className="col-3 field">
               <div className="label">Banca alvo (R$)</div>
               <input
                 className="input"
@@ -681,7 +676,7 @@ export default function Metas({ user }) {
             </div>
           ) : null}
 
-          <div className="field">
+          <div className="col-3 field">
             <div className="label">Stop Win (R$ por dia)</div>
             <input
               className="input"
@@ -692,7 +687,7 @@ export default function Metas({ user }) {
             />
           </div>
 
-          <div className="field">
+          <div className="col-3 field">
             <div className="label">Stop Loss (R$ por dia)</div>
             <input
               className="input"
@@ -703,9 +698,11 @@ export default function Metas({ user }) {
             />
           </div>
 
-          <button className="btn primary" type="submit">
-            Criar meta
-          </button>
+          <div className="col-12">
+            <button className="btn primary" type="submit">
+              Criar meta
+            </button>
+          </div>
         </form>
 
         {sugestaoCreate ? (
@@ -856,17 +853,8 @@ export default function Metas({ user }) {
 
                     {editingMeta ? (
                       <div style={{ marginBottom: 12 }}>
-                        <div
-                          className="row"
-                          style={{
-                            alignItems: "flex-end",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <div
-                            className="field"
-                            style={{ minWidth: 220, flex: 1 }}
-                          >
+                        <div className="formGrid">
+                          <div className="col-5 field">
                             <div className="label">Título</div>
                             <input
                               className="input"
@@ -875,7 +863,7 @@ export default function Metas({ user }) {
                             />
                           </div>
 
-                          <div className="field">
+                          <div className="col-2 field">
                             <div className="label">Início</div>
                             <input
                               className="input"
@@ -885,7 +873,7 @@ export default function Metas({ user }) {
                             />
                           </div>
 
-                          <div className="field">
+                          <div className="col-2 field">
                             <div className="label">Término</div>
                             <input
                               className="input"
@@ -895,7 +883,7 @@ export default function Metas({ user }) {
                             />
                           </div>
 
-                          <div className="field" style={{ minWidth: 220 }}>
+                          <div className="col-3 field">
                             <div className="label">Tipo</div>
                             <select
                               className="select"
@@ -908,7 +896,7 @@ export default function Metas({ user }) {
                             </select>
                           </div>
 
-                          <div className="field">
+                          <div className="col-3 field">
                             <div className="label">Banca base</div>
                             <input
                               className="input"
@@ -920,17 +908,19 @@ export default function Metas({ user }) {
 
                           {editGoalType === "pct" ? (
                             <>
-                              <div className="field">
+                              <div className="col-2 field">
                                 <div className="label">% ao dia</div>
                                 <input
                                   className="input"
                                   value={String(editPctDia)}
-                                  onChange={(e) => setEditPctDia(e.target.value)}
+                                  onChange={(e) =>
+                                    setEditPctDia(e.target.value)
+                                  }
                                   inputMode="decimal"
                                 />
                               </div>
 
-                              <div className="field">
+                              <div className="col-2 field">
                                 <div className="label">Entradas/dia</div>
                                 <input
                                   className="input"
@@ -942,10 +932,7 @@ export default function Metas({ user }) {
                                 />
                               </div>
 
-                              <div
-                                className="field"
-                                style={{ minWidth: 220 }}
-                              >
+                              <div className="col-3 field">
                                 <div className="label">Empate?</div>
                                 <select
                                   className="select"
@@ -960,7 +947,7 @@ export default function Metas({ user }) {
                               </div>
 
                               {editTemEmpate ? (
-                                <div className="field">
+                                <div className="col-2 field">
                                   <div className="label">% empate</div>
                                   <input
                                     className="input"
@@ -976,7 +963,7 @@ export default function Metas({ user }) {
                           ) : null}
 
                           {editGoalType === "daily_fixed" ? (
-                            <div className="field">
+                            <div className="col-3 field">
                               <div className="label">Valor/dia</div>
                               <input
                                 className="input"
@@ -990,7 +977,7 @@ export default function Metas({ user }) {
                           ) : null}
 
                           {editGoalType === "final_target" ? (
-                            <div className="field">
+                            <div className="col-3 field">
                               <div className="label">Banca alvo</div>
                               <input
                                 className="input"
@@ -1003,7 +990,7 @@ export default function Metas({ user }) {
                             </div>
                           ) : null}
 
-                          <div className="field">
+                          <div className="col-3 field">
                             <div className="label">Stop Win</div>
                             <input
                               className="input"
@@ -1013,7 +1000,7 @@ export default function Metas({ user }) {
                             />
                           </div>
 
-                          <div className="field">
+                          <div className="col-3 field">
                             <div className="label">Stop Loss</div>
                             <input
                               className="input"
@@ -1023,20 +1010,22 @@ export default function Metas({ user }) {
                             />
                           </div>
 
-                          <button
-                            className="btn primary"
-                            type="button"
-                            onClick={() => saveEditMeta(m)}
-                          >
-                            Salvar
-                          </button>
-                          <button
-                            className="btn"
-                            type="button"
-                            onClick={cancelEditMeta}
-                          >
-                            Cancelar
-                          </button>
+                          <div className="col-12 row" style={{ gap: 10 }}>
+                            <button
+                              className="btn primary"
+                              type="button"
+                              onClick={() => saveEditMeta(m)}
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={cancelEditMeta}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
                         </div>
 
                         <div className="hr" style={{ marginTop: 12 }} />
@@ -1118,35 +1107,43 @@ export default function Metas({ user }) {
                                   </button>
 
                                   {editingRowId === d.id ? (
-                                    <div className="row" style={{ gap: 8 }}>
-                                      <input
-                                        className="input"
-                                        style={{ width: 170 }}
-                                        value={editingValue}
-                                        onChange={(e) =>
-                                          setEditingValue(e.target.value)
-                                        }
-                                        inputMode="decimal"
-                                        placeholder={
-                                          editingStatus === "loss"
-                                            ? "Valor (vira negativo)"
-                                            : "Valor"
-                                        }
-                                      />
-                                      <button
-                                        className="btn primary"
-                                        type="button"
-                                        onClick={() => submitValue(d)}
-                                      >
-                                        OK
-                                      </button>
-                                      <button
-                                        className="btn"
-                                        type="button"
-                                        onClick={cancelInput}
-                                      >
-                                        Cancelar
-                                      </button>
+                                    <div
+                                      className="formRow"
+                                      style={{ marginTop: 6 }}
+                                    >
+                                      <div className="field">
+                                        <input
+                                          className="input"
+                                          value={editingValue}
+                                          onChange={(e) =>
+                                            setEditingValue(e.target.value)
+                                          }
+                                          inputMode="decimal"
+                                          placeholder={
+                                            editingStatus === "loss"
+                                              ? "Valor (vira negativo)"
+                                              : "Valor"
+                                          }
+                                        />
+                                      </div>
+                                      <div className="actions">
+                                        <button
+                                          className="btn primary"
+                                          type="button"
+                                          onClick={() => submitValue(d)}
+                                        >
+                                          OK
+                                        </button>
+                                      </div>
+                                      <div className="actions">
+                                        <button
+                                          className="btn"
+                                          type="button"
+                                          onClick={cancelInput}
+                                        >
+                                          Cancelar
+                                        </button>
+                                      </div>
                                     </div>
                                   ) : null}
                                 </div>

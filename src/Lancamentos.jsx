@@ -10,7 +10,7 @@ const tipos = [
 ];
 
 function sign(tipo) {
-  return (tipo === "green" || tipo === "deposito") ? 1 : -1;
+  return tipo === "green" || tipo === "deposito" ? 1 : -1;
 }
 
 function ymFromDate(d) {
@@ -22,7 +22,7 @@ function ymFromDate(d) {
 function monthStartEndFromYM(ym) {
   const [y, m] = ym.split("-").map(Number);
   const start = new Date(y, (m || 1) - 1, 1, 12, 0, 0);
-  const end = new Date(y, (m || 1), 0, 12, 0, 0);
+  const end = new Date(y, m || 1, 0, 12, 0, 0);
   return { start, end };
 }
 
@@ -102,7 +102,9 @@ export default function Lancamentos({ user }) {
     }
   }
 
-  useEffect(() => { load(); }, [range.start, range.end]);
+  useEffect(() => {
+    load();
+  }, [range.start, range.end]);
 
   async function add(e) {
     e.preventDefault();
@@ -164,60 +166,92 @@ export default function Lancamentos({ user }) {
         <div className="card" style={{ gridColumn: "span 12" }}>
           <h2>Novo lançamento</h2>
 
-          <form onSubmit={add} className="row">
-            <div className="field">
+          <form onSubmit={add} className="formGrid" style={{ marginTop: 10 }}>
+            <div className="col-2 field">
               <div className="label">Tipo</div>
               <select className="select" value={tipo} onChange={(e) => setTipo(e.target.value)}>
                 {tipos.map((t) => (
-                  <option key={t.v} value={t.v}>{t.t}</option>
+                  <option key={t.v} value={t.v}>
+                    {t.t}
+                  </option>
                 ))}
               </select>
             </div>
 
-            <div className="field">
+            <div className="col-2 field">
               <div className="label">Data</div>
               <input className="input" value={data} onChange={(e) => setData(e.target.value)} type="date" required />
             </div>
 
-            <div className="field">
+            <div className="col-2 field">
               <div className="label">Valor</div>
-              <input className="input" value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" required />
+              <input
+                className="input"
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                inputMode="decimal"
+                placeholder="0,00"
+                required
+              />
             </div>
 
-            <div className="field" style={{ minWidth: 240, flex: 1 }}>
+            <div className="col-5 field">
               <div className="label">Obs (opcional)</div>
-              <input className="input" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex: Jogo X, estratégia Y" />
+              <input
+                className="input"
+                value={obs}
+                onChange={(e) => setObs(e.target.value)}
+                placeholder="Ex: Jogo X, estratégia Y"
+              />
             </div>
 
-            <button className="btn primary" disabled={saving}>
-              {saving ? "Salvando..." : "Adicionar"}
-            </button>
+            <div className="col-1 field" style={{ alignSelf: "end" }}>
+              <button className="btn primary" disabled={saving} style={{ width: "100%" }}>
+                {saving ? "..." : "Adicionar"}
+              </button>
+            </div>
 
-            {err ? <div className="muted" style={{ width: "100%" }}>{err}</div> : null}
+            {err ? (
+              <div className="col-12 muted" style={{ marginTop: 4 }}>
+                {err}
+              </div>
+            ) : null}
           </form>
         </div>
 
         <div className="card" style={{ gridColumn: "span 12" }}>
-          <div className="row" style={{ gap: 12 }}>
-            <div>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ minWidth: 260 }}>
               <h2 style={{ marginBottom: 6 }}>Filtro</h2>
-              <div className="row">
-                <button className={"tab " + (filtro === "hoje" ? "active" : "")} onClick={() => setFiltro("hoje")}>Hoje</button>
-                <button className={"tab " + (filtro === "semana" ? "active" : "")} onClick={() => setFiltro("semana")}>Semana</button>
-                <button className={"tab " + (filtro === "mes" ? "active" : "")} onClick={() => setFiltro("mes")}>Mês</button>
-                <button className={"tab " + (filtro === "intervalo" ? "active" : "")} onClick={() => setFiltro("intervalo")}>Intervalo</button>
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                <button className={"tab " + (filtro === "hoje" ? "active" : "")} onClick={() => setFiltro("hoje")} type="button">
+                  Hoje
+                </button>
+                <button className={"tab " + (filtro === "semana" ? "active" : "")} onClick={() => setFiltro("semana")} type="button">
+                  Semana
+                </button>
+                <button className={"tab " + (filtro === "mes" ? "active" : "")} onClick={() => setFiltro("mes")} type="button">
+                  Mês
+                </button>
+                <button
+                  className={"tab " + (filtro === "intervalo" ? "active" : "")}
+                  onClick={() => setFiltro("intervalo")}
+                  type="button"
+                >
+                  Intervalo
+                </button>
               </div>
             </div>
 
             {filtro === "mes" ? (
-              <div className="row" style={{ alignItems: "flex-end" }}>
+              <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <button className="btn" type="button" onClick={() => setMonthYM(ymFromDate(new Date()))}>
                   Mês atual
                 </button>
                 <button className="btn" type="button" onClick={() => setMonthYM(addMonthsYM(monthYM, -1))}>
                   Mês passado
                 </button>
-                <div className="field" style={{ minWidth: 170 }}>
+                <div className="field" style={{ minWidth: 180 }}>
                   <div className="label">Escolher mês</div>
                   <input className="input" type="month" value={monthYM} onChange={(e) => setMonthYM(e.target.value)} />
                 </div>
@@ -225,7 +259,7 @@ export default function Lancamentos({ user }) {
             ) : null}
 
             {filtro === "intervalo" ? (
-              <div className="row" style={{ alignItems: "flex-end" }}>
+              <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <div className="field">
                   <div className="label">Início</div>
                   <input className="input" type="date" value={ini} onChange={(e) => setIni(e.target.value)} />
@@ -234,21 +268,31 @@ export default function Lancamentos({ user }) {
                   <div className="label">Fim</div>
                   <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
                 </div>
-                <button className="btn" onClick={load} type="button">Aplicar</button>
+                <button className="btn" onClick={load} type="button">
+                  Aplicar
+                </button>
               </div>
             ) : (
-              <div className="muted" style={{ marginTop: 22 }}>
-                Período: {parseYMDLocal(range.start)?.toLocaleDateString("pt-BR")} → {parseYMDLocal(range.end)?.toLocaleDateString("pt-BR")}
+              <div className="muted" style={{ marginBottom: 2 }}>
+                Período: {parseYMDLocal(range.start)?.toLocaleDateString("pt-BR")} →{" "}
+                {parseYMDLocal(range.end)?.toLocaleDateString("pt-BR")}
               </div>
             )}
 
-            <div className="right" />
-
-            <div className="row">
-              <span className="badge"><span className="dot ok" />Banca (período): <b style={{ marginLeft: 6 }}>{money(resumo.banca)}</b></span>
-              <span className="badge">Lucro/Prejuízo: <b style={{ marginLeft: 6 }}>{money(resumo.lucroPreju)}</b></span>
-              <span className="badge">Dep.: <b style={{ marginLeft: 6 }}>{money(resumo.dep)}</b></span>
-              <span className="badge">Saq.: <b style={{ marginLeft: 6 }}>{money(resumo.saq)}</b></span>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <span className="badge">
+                <span className="dot ok" />
+                Banca (período): <b style={{ marginLeft: 6 }}>{money(resumo.banca)}</b>
+              </span>
+              <span className="badge">
+                Lucro/Prejuízo: <b style={{ marginLeft: 6 }}>{money(resumo.lucroPreju)}</b>
+              </span>
+              <span className="badge">
+                Dep.: <b style={{ marginLeft: 6 }}>{money(resumo.dep)}</b>
+              </span>
+              <span className="badge">
+                Saq.: <b style={{ marginLeft: 6 }}>{money(resumo.saq)}</b>
+              </span>
             </div>
           </div>
 
@@ -280,14 +324,18 @@ export default function Lancamentos({ user }) {
                         {typeLabel(r.tipo)}
                       </span>
                     </td>
-                    <td style={{ fontWeight: 800 }}>
-                      {isPos ? money(r.valor) : `-${money(r.valor)}`}
+                    <td style={{ fontWeight: 800 }}>{isPos ? money(r.valor) : `-${money(r.valor)}`}</td>
+                    <td className="muted" style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.obs || "-"}
                     </td>
-                    <td className="muted">{r.obs || "-"}</td>
                     <td>
-                      <div className="row" style={{ gap: 8 }}>
-                        <button className="btn" type="button" onClick={() => editPrompt(r)}>Editar</button>
-                        <button className="btn danger" type="button" onClick={() => del(r.id)}>Excluir</button>
+                      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <button className="btn" type="button" onClick={() => editPrompt(r)}>
+                          Editar
+                        </button>
+                        <button className="btn danger" type="button" onClick={() => del(r.id)}>
+                          Excluir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -295,7 +343,9 @@ export default function Lancamentos({ user }) {
               })}
               {!rows.length && !loading ? (
                 <tr>
-                  <td colSpan={5} className="muted">Sem lançamentos nesse período.</td>
+                  <td colSpan={5} className="muted">
+                    Sem lançamentos nesse período.
+                  </td>
                 </tr>
               ) : null}
             </tbody>
