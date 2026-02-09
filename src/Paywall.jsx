@@ -1,15 +1,18 @@
 import { useMemo } from "react";
 
-export default function Paywall({ displayName, status, onLogout, checkoutUrl, onRefresh }) {
+export default function Paywall({ displayName, status, onLogout, checkoutUrl, onAlreadyPaid }) {
   const msg = useMemo(() => {
-    const s = String(status || "inactive").toLowerCase();
-    if (s === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
-    if (s === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
-    if (s === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
+    const st = String(status || "").toLowerCase();
+    if (st === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
+    if (st === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
+    if (st === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
     return "Seu acesso ainda não está ativo. Assine para liberar o Banca Pro.";
   }, [status]);
 
-  const safeUrl = (checkoutUrl && String(checkoutUrl).trim()) || "https://pay.kiwify.com.br/ppcESel";
+  function goCheckout() {
+    const url = (checkoutUrl && String(checkoutUrl).trim()) || "https://pay.kiwify.com.br/ppcESel";
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div className="container" style={{ maxWidth: 980 }}>
@@ -53,10 +56,10 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl, on
             </div>
 
             <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-              <a className="btn primary" href={safeUrl} target="_blank" rel="noreferrer">
+              <button className="btn primary" type="button" onClick={goCheckout}>
                 Assinar agora
-              </a>
-              <button className="btn" type="button" onClick={onRefresh}>
+              </button>
+              <button className="btn" type="button" onClick={onAlreadyPaid}>
                 Já paguei, atualizar
               </button>
             </div>

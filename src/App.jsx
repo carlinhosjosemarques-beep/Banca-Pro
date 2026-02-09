@@ -25,10 +25,11 @@ function useIsMobile(max = 720) {
   return is;
 }
 
+const CHECKOUT_FALLBACK = "https://pay.kiwify.com.br/ppcESel";
+
 function getCheckoutUrl() {
-  // ⚠️ Vite injeta env no BUILD, então precisa redeploy quando mudar no Vercel.
   const url = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
-  return (url && String(url).trim()) || "https://pay.kiwify.com.br/ppcESel";
+  return (url && String(url).trim()) || CHECKOUT_FALLBACK;
 }
 
 function openCheckout() {
@@ -80,10 +81,7 @@ function IconMoon() {
 function IconUser() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
-      <path
-        fill="currentColor"
-        d="M12 12a4 4 0 1 0-4-4a4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"
-      />
+      <path fill="currentColor" d="M12 12a4 4 0 1 0-4-4a4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
     </svg>
   );
 }
@@ -97,32 +95,6 @@ function IconLogout() {
       />
     </svg>
   );
-}
-
-function normalizeStatus(row) {
-  // aceita qualquer um desses schemas
-  const s =
-    row?.subscription_status ||
-    row?.plan_status ||
-    (row?.is_premium ? "active" : "inactive") ||
-    "inactive";
-
-  return String(s).toLowerCase();
-}
-
-function normalizePaidUntil(row) {
-  return row?.paid_until ?? row?.premium_until ?? null;
-}
-
-function isPremiumFromRow(row) {
-  const status = normalizeStatus(row);
-  if (status !== "active") return false;
-
-  const pu = normalizePaidUntil(row);
-  if (!pu) return true;
-
-  const t = new Date(pu).getTime();
-  return Number.isFinite(t) ? t > Date.now() : true;
 }
 
 export default function App() {
@@ -139,7 +111,6 @@ export default function App() {
   const [plan, setPlan] = useState("free");
   const [subscriptionStatus, setSubscriptionStatus] = useState("inactive");
   const [paidUntil, setPaidUntil] = useState(null);
-
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState("");
 
@@ -158,39 +129,31 @@ export default function App() {
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
 
-  function applyProfileRow(row) {
-    setDisplayName(row?.display_name || "");
-    setPlan(row?.plan || (row?.is_premium || row?.plan_status === "active" ? "pro" : "free"));
-
-    const st = normalizeStatus(row);
-    setSubscriptionStatus(st);
-
-    const pu = normalizePaidUntil(row);
-    setPaidUntil(pu);
-  }
-
-  async function fetchProfile(uid) {
+  async function fetchProfile(uid, email) {
     setProfileError("");
     setLoadingProfile(true);
 
     try {
-      // tenta o schema padrão (profiles.id = auth.user.id)
-      let { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "display_name,plan,subscription_status,paid_until,is_premium,plan_status,premium_until"
-        )
-        .eq("id", uid)
-        .maybeSingle();
+      let data = null;
+      let error = null;
 
-      // fallback se for profiles.user_id
-      if (!data && !error) {
+      // 1) padrão (profiles.id = auth.user.id)
+      {
+        const r = await supabase
+          .from("profiles")
+          .select("display_name,plan,subscription_status,paid_until,email")
+          .eq("id", uid)
+          .maybeSingle();
+        data = r.data;
+        error = r.error;
+      }
+
+      // 2) fallback por email (quando seu profiles.id não bate com auth.uid por algum motivo)
+      if (!data && !error && email) {
         const r2 = await supabase
           .from("profiles")
-          .select(
-            "display_name,plan,subscription_status,paid_until,is_premium,plan_status,premium_until"
-          )
-          .eq("user_id", uid)
+          .select("display_name,plan,subscription_status,paid_until,email")
+          .eq("email", email)
           .maybeSingle();
         data = r2.data;
         error = r2.error;
@@ -198,9 +161,16 @@ export default function App() {
 
       if (error) throw error;
 
-      applyProfileRow(data || {});
+      setDisplayName(data?.display_name || "");
+      setPlan(data?.plan || "free");
+      setSubscriptionStatus(data?.subscription_status || "inactive");
+      setPaidUntil(data?.paid_until ?? null);
     } catch (e) {
       setProfileError(e?.message || "Erro ao carregar perfil");
+      setDisplayName("");
+      setPlan("free");
+      setSubscriptionStatus("inactive");
+      setPaidUntil(null);
     } finally {
       setLoadingProfile(false);
     }
@@ -212,39 +182,29 @@ export default function App() {
     async function loadAndSubscribe() {
       if (!user?.id) return;
 
-      await fetchProfile(user.id);
+      await fetchProfile(user.id, user.email);
 
-      // realtime: tenta updates por id
       channel = supabase
         .channel("profile-premium-" + user.id)
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
-          (payload) => applyProfileRow(payload?.new || {})
+          (payload) => {
+            const next = payload?.new;
+            if (!next) return;
+            setDisplayName(next.display_name || "");
+            setPlan(next.plan || "free");
+            setSubscriptionStatus(next.subscription_status || "inactive");
+            setPaidUntil(next.paid_until ?? null);
+          }
         )
         .subscribe();
-
-      // fallback: se o seu schema usa user_id, deixa um canal extra
-      const channel2 = supabase
-        .channel("profile-premium-userid-" + user.id)
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "profiles", filter: `user_id=eq.${user.id}` },
-          (payload) => applyProfileRow(payload?.new || {})
-        )
-        .subscribe();
-
-      // junta os canais (remove os dois no cleanup)
-      channel._bp_channel2 = channel2;
     }
 
     loadAndSubscribe();
 
     return () => {
-      if (channel) {
-        if (channel._bp_channel2) supabase.removeChannel(channel._bp_channel2);
-        supabase.removeChannel(channel);
-      }
+      if (channel) supabase.removeChannel(channel);
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
@@ -260,13 +220,16 @@ export default function App() {
   }, [displayName]);
 
   const isPremium = useMemo(() => {
-    return isPremiumFromRow({
-      subscription_status: subscriptionStatus,
-      paid_until: paidUntil,
-      // compat
-      is_premium: subscriptionStatus === "active" && !paidUntil ? true : false,
-    });
-  }, [subscriptionStatus, paidUntil]);
+    const statusOk = String(subscriptionStatus || "").toLowerCase() === "active";
+    const planOk = String(plan || "").toLowerCase() === "premium";
+
+    if (!statusOk && !planOk) return false;
+
+    if (!paidUntil) return true;
+
+    const t = new Date(paidUntil).getTime();
+    return Number.isFinite(t) ? t > Date.now() : true;
+  }, [subscriptionStatus, plan, paidUntil]);
 
   async function sair() {
     if (refreshTimerRef.current) {
@@ -279,19 +242,19 @@ export default function App() {
   async function onAlreadyPaid() {
     if (!user?.id) return;
 
-    await fetchProfile(user.id);
+    await fetchProfile(user.id, user.email);
 
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
 
     const start = Date.now();
     refreshTimerRef.current = setInterval(async () => {
-      if (Date.now() - start > 60_000) {
+      if (Date.now() - start > 90_000) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
         return;
       }
-      await fetchProfile(user.id);
-    }, 4000);
+      await fetchProfile(user.id, user.email);
+    }, 3500);
   }
 
   const themeLabel = theme === "dark" ? "Modo claro" : "Modo escuro";
@@ -369,7 +332,7 @@ export default function App() {
           status={subscriptionStatus}
           checkoutUrl={checkoutUrl}
           onLogout={sair}
-          onRefresh={onAlreadyPaid}
+          onAlreadyPaid={onAlreadyPaid}
         />
 
         {profileError ? (
@@ -379,19 +342,6 @@ export default function App() {
         ) : null}
 
         <div className="container" style={{ marginTop: 10 }}>
-          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
-            <button className="btn primary" type="button" onClick={openCheckout}>
-              Assinar agora
-            </button>
-            <button className="btn" type="button" onClick={onAlreadyPaid}>
-              Já paguei, atualizar
-            </button>
-          </div>
-
-          <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            Se você pagou com outro e-mail, entre com o mesmo e-mail usado no pagamento.
-          </div>
-
           <div className="row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
             <span className="badge">
               Status: <b>{subscriptionStatus === "active" ? "Ativa" : "Inativa"}</b>
