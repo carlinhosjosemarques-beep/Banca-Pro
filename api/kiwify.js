@@ -48,7 +48,7 @@ export default async function handler(req, res) {
       payload?.email ||
       null;
 
-    if (!email) return res.status(200).json({ ok: true, note: "no_email_in_payload" });
+    if (!email) return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
 
     const isApproved =
       ev.includes("compra_aprov") ||
@@ -56,8 +56,8 @@ export default async function handler(req, res) {
       ev.includes("aprovada") ||
       ev.includes("assinatura_renov") ||
       ev.includes("renovada") ||
-      ev.includes("subscription_renew") ||
-      ev.includes("subscription_active");
+      ev.includes("subscription_active") ||
+      ev.includes("subscription_renew");
 
     const isCanceledOrBad =
       ev.includes("reembolso") ||
@@ -65,13 +65,12 @@ export default async function handler(req, res) {
       ev.includes("chargeback") ||
       ev.includes("cancel") ||
       ev.includes("assinatura_cancel") ||
-      ev.includes("assinatura_atras") ||
       ev.includes("past_due") ||
-      ev.includes("recusada") ||
-      ev.includes("compra_recus");
+      ev.includes("atras") ||
+      ev.includes("recus");
 
     if (!isApproved && !isCanceledOrBad) {
-      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw });
+      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
     const { data: userByEmail, error: uErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
@@ -79,7 +78,7 @@ export default async function handler(req, res) {
 
     const uid = userByEmail?.user?.id;
     if (!uid) {
-      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email" });
+      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email", email, event: eventRaw });
     }
 
     const paidUntil =
@@ -96,8 +95,6 @@ export default async function handler(req, res) {
           plan: "premium",
           subscription_status: "active",
           paid_until: paidUntil ? new Date(paidUntil).toISOString() : addDaysISO(31),
-          kiwify_customer_email: email,
-          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
           updated_at: new Date().toISOString(),
         }
       : {
@@ -106,18 +103,22 @@ export default async function handler(req, res) {
           plan: "free",
           subscription_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
           paid_until: null,
-          kiwify_customer_email: email,
-          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
           updated_at: new Date().toISOString(),
         };
 
-    const { error: upErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(patch, { onConflict: "id" });
-
+    const { error: upErr } = await supabaseAdmin.from("profiles").upsert(patch, { onConflict: "id" });
     if (upErr) throw upErr;
 
-    return res.status(200).json({ ok: true, uid, email, status: patch.subscription_status });
+    return res.status(200).json({
+      ok: true,
+      note: "profile_updated",
+      uid,
+      email,
+      event: eventRaw,
+      status: patch.subscription_status,
+      plan: patch.plan,
+      paid_until: patch.paid_until,
+    });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }
