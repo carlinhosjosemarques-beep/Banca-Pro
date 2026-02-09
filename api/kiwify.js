@@ -24,7 +24,8 @@ export default async function handler(req, res) {
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
     const payload = req.body || {};
-    const event = payload?.event || payload?.type || payload?.name || "";
+    const eventRaw = payload?.event || payload?.type || payload?.name || "";
+    const ev = String(eventRaw).toLowerCase();
 
     const email =
       payload?.customer?.email ||
@@ -38,69 +39,100 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, note: "no_email_in_payload" });
     }
 
+    // Busca perfil pelo e-mail
+    // (compatível com tabelas que usam id OU user_id)
     const { data: profile, error: pErr } = await supabaseAdmin
       .from("profiles")
-      .select("user_id,email")
+      .select("id,user_id,email")
       .eq("email", email)
       .maybeSingle();
 
     if (pErr) throw pErr;
 
-    if (!profile?.user_id) {
+    const profileId = profile?.id || null;
+    const profileUserId = profile?.user_id || null;
+
+    if (!profileId && !profileUserId) {
       return res.status(200).json({ ok: true, note: "user_not_found_for_email" });
     }
 
-    const ev = String(event).toLowerCase();
-
+    // Eventos que liberam
     const isPaid =
-      ev.includes("aprov") ||
-      ev.includes("paid") ||
+      ev.includes("compra_aprov") ||
+      ev.includes("compra aprovad") ||
       ev.includes("approved") ||
-      ev.includes("compra_aprovada") ||
-      ev.includes("assinatura_renovada") ||
-      ev.includes("subscription_active");
+      ev.includes("paid") ||
+      ev.includes("assinatura_renov") ||
+      ev.includes("assinatura renov") ||
+      ev.includes("subscription_active") ||
+      ev.includes("assinatura ativa");
 
-    const isCanceled =
+    // Eventos que bloqueiam
+    const isBlocked =
+      ev.includes("compra_recus") ||
+      ev.includes("compra recus") ||
       ev.includes("cancel") ||
       ev.includes("reemb") ||
       ev.includes("refun") ||
       ev.includes("chargeback") ||
-      ev.includes("atrasad") ||
-      ev.includes("charge_failed") ||
-      ev.includes("subscription_inactive") ||
-      ev.includes("assinatura_cancelada") ||
-      ev.includes("assinatura_atrasada");
+      ev.includes("assinatura_cancel") ||
+      ev.includes("assinatura_atras") ||
+      ev.includes("past_due") ||
+      ev.includes("subscription_inactive");
 
-    if (!isPaid && !isCanceled) {
-      return res.status(200).json({ ok: true, note: "ignored_event", event });
+    if (!isPaid && !isBlocked) {
+      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw });
     }
 
-    const patch = isPaid
+    // ✅ Campos que o App.jsx lê
+    const patchCore = isPaid
+      ? {
+          subscription_status: "active",
+          plan: "pro",
+          paid_until: null, // null = sem expiração (o app aceita como premium enquanto status=active)
+        }
+      : {
+          subscription_status: "inactive", // ou "canceled" / "past_due" se preferir
+          plan: "free",
+          paid_until: null,
+        };
+
+    // ✅ Mantém compatibilidade com seus campos antigos (se existirem)
+    const patchCompat = isPaid
       ? {
           is_premium: true,
           plan_status: "active",
-          premium_until: payload?.data?.premium_until || null,
-          kiwify_customer_email: email,
-          kiwify_subscription_id:
-            payload?.subscription_id || payload?.data?.subscription_id || null,
+          premium_until: null,
         }
       : {
           is_premium: false,
           plan_status: "inactive",
           premium_until: null,
-          kiwify_customer_email: email,
-          kiwify_subscription_id:
-            payload?.subscription_id || payload?.data?.subscription_id || null,
         };
 
-    const { error: uErr } = await supabaseAdmin
-      .from("profiles")
-      .update(patch)
-      .eq("user_id", profile.user_id);
+    const patch = {
+      ...patchCore,
+      ...patchCompat,
+      kiwify_customer_email: email,
+      kiwify_subscription_id:
+        payload?.subscription_id || payload?.data?.subscription_id || payload?.data?.subscription?.id || null,
+      kiwify_last_event: eventRaw || null,
+    };
 
-    if (uErr) throw uErr;
+    // Atualiza por id (padrão) e tenta também por user_id (fallback)
+    let updated = false;
 
-    return res.status(200).json({ ok: true });
+    if (profileId) {
+      const { error: u1 } = await supabaseAdmin.from("profiles").update(patch).eq("id", profileId);
+      if (u1) throw u1;
+      updated = true;
+    } else if (profileUserId) {
+      const { error: u2 } = await supabaseAdmin.from("profiles").update(patch).eq("user_id", profileUserId);
+      if (u2) throw u2;
+      updated = true;
+    }
+
+    return res.status(200).json({ ok: true, updated, email, event: eventRaw });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }

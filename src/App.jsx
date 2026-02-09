@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 import Login from "./Login";
@@ -7,6 +7,7 @@ import Lancamentos from "./Lancamentos";
 import Relatorios from "./Relatorios";
 import Metas from "./Metas";
 import Perfil from "./Perfil";
+import Paywall from "./Paywall";
 
 function helloByHour(h) {
   if (h >= 5 && h < 12) return "Bom dia";
@@ -35,14 +36,7 @@ function openCheckout() {
 
 function LogoMark() {
   return (
-    <svg
-      width="34"
-      height="34"
-      viewBox="0 0 64 64"
-      aria-hidden="true"
-      focusable="false"
-      style={{ display: "block" }}
-    >
+    <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
       <defs>
         <linearGradient id="bp_g1" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
           <stop stopColor="#7C3AED" />
@@ -55,20 +49,8 @@ function LogoMark() {
       </defs>
 
       <rect x="6" y="6" width="52" height="52" rx="16" fill="url(#bp_g1)" />
-      <path
-        d="M22 42c0-11 8-20 20-20"
-        fill="none"
-        stroke="url(#bp_g2)"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-      <path
-        d="M26 44c0-8 6-14 14-14"
-        fill="none"
-        stroke="rgba(255,255,255,.9)"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
+      <path d="M22 42c0-11 8-20 20-20" fill="none" stroke="url(#bp_g2)" strokeWidth="6" strokeLinecap="round" />
+      <path d="M26 44c0-8 6-14 14-14" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="5" strokeLinecap="round" />
       <circle cx="42" cy="22" r="4" fill="rgba(255,255,255,.9)" />
     </svg>
   );
@@ -130,6 +112,9 @@ export default function App() {
   const [subscriptionStatus, setSubscriptionStatus] = useState("inactive");
   const [paidUntil, setPaidUntil] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState("");
+
+  const refreshTimerRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -144,28 +129,49 @@ export default function App() {
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
 
+  async function fetchProfile(uid) {
+    setProfileError("");
+    setLoadingProfile(true);
+
+    try {
+      // ✅ Padrão: profiles.id = auth.user.id
+      let { data, error } = await supabase
+        .from("profiles")
+        .select("display_name,plan,subscription_status,paid_until")
+        .eq("id", uid)
+        .maybeSingle();
+
+      // ✅ Fallback (caso seu banco use user_id)
+      if (!data && !error) {
+        const r2 = await supabase
+          .from("profiles")
+          .select("display_name,plan,subscription_status,paid_until")
+          .eq("user_id", uid)
+          .maybeSingle();
+        data = r2.data;
+        error = r2.error;
+      }
+
+      if (error) throw error;
+
+      setDisplayName(data?.display_name || "");
+      setPlan(data?.plan || "free");
+      setSubscriptionStatus(data?.subscription_status || "inactive");
+      setPaidUntil(data?.paid_until ?? null);
+    } catch (e) {
+      setProfileError(e?.message || "Erro ao carregar perfil");
+    } finally {
+      setLoadingProfile(false);
+    }
+  }
+
   useEffect(() => {
     let channel;
 
-    async function loadProfileAndSubscribe() {
+    async function loadAndSubscribe() {
       if (!user?.id) return;
 
-      setLoadingProfile(true);
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("display_name,plan,subscription_status,paid_until")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (!error) {
-        setDisplayName(data?.display_name || "");
-        setPlan(data?.plan || "free");
-        setSubscriptionStatus(data?.subscription_status || "inactive");
-        setPaidUntil(data?.paid_until ?? null);
-      }
-
-      setLoadingProfile(false);
+      await fetchProfile(user.id);
 
       channel = supabase
         .channel("profile-premium-" + user.id)
@@ -184,10 +190,14 @@ export default function App() {
         .subscribe();
     }
 
-    loadProfileAndSubscribe();
+    loadAndSubscribe();
 
     return () => {
       if (channel) supabase.removeChannel(channel);
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
     };
   }, [user?.id]);
 
@@ -206,7 +216,30 @@ export default function App() {
   }, [subscriptionStatus, paidUntil]);
 
   async function sair() {
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
     await supabase.auth.signOut();
+  }
+
+  async function onAlreadyPaid() {
+    if (!user?.id) return;
+
+    await fetchProfile(user.id);
+
+    // ✅ Opcional: checa automaticamente por 60s (caso webhook demore)
+    if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+
+    const start = Date.now();
+    refreshTimerRef.current = setInterval(async () => {
+      if (Date.now() - start > 60_000) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+        return;
+      }
+      await fetchProfile(user.id);
+    }, 4000);
   }
 
   const themeLabel = theme === "dark" ? "Modo claro" : "Modo escuro";
@@ -234,87 +267,88 @@ export default function App() {
 
   if (!isPremium) {
     return (
-      <div className="container" style={{ paddingTop: 24 }}>
-        <div className="topbar" style={{ marginBottom: 18 }}>
-          <div className="brand">
-            <div className="logo" aria-hidden="true">
-              <LogoMark />
+      <div>
+        <div className="container" style={{ paddingTop: 24 }}>
+          <div className="topbar" style={{ marginBottom: 18 }}>
+            <div className="brand">
+              <div className="logo" aria-hidden="true">
+                <LogoMark />
+              </div>
+              <div>
+                <h1>Banca Pro</h1>
+                <p>
+                  {saudacao} • {user.email}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1>Banca Pro</h1>
-              <p>
-                {saudacao} • {user.email}
-              </p>
+
+            <div className="nav">
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                title={themeLabel}
+                aria-label={themeLabel}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <ThemeIcon />
+                <span>{themeLabel}</span>
+              </button>
+
+              <button
+                className="btn danger"
+                type="button"
+                onClick={sair}
+                title="Sair"
+                aria-label="Sair"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <IconLogout />
+                <span>Sair</span>
+              </button>
             </div>
-          </div>
-
-          <div className="nav">
-            <button
-              className="btn"
-              type="button"
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              title={themeLabel}
-              aria-label={themeLabel}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <ThemeIcon />
-              <span>{themeLabel}</span>
-            </button>
-
-            <button
-              className="btn danger"
-              type="button"
-              onClick={sair}
-              title="Sair"
-              aria-label="Sair"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <IconLogout />
-              <span>Sair</span>
-            </button>
           </div>
         </div>
 
-        <div className="card">
-          <h2 style={{ marginBottom: 6 }}>Acesso bloqueado</h2>
-          <div className="muted" style={{ marginBottom: 14 }}>
-            Para usar o Banca Pro, você precisa ativar sua assinatura.
-          </div>
+        <Paywall
+          displayName={displayName}
+          status={subscriptionStatus}
+          checkoutUrl={import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "#"}
+          onLogout={sair}
+        />
 
-          <div className="row" style={{ gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-            <span className="badge">
-              Status: <b>{subscriptionStatus === "active" ? "Ativa" : "Inativa"}</b>
-            </span>
-            <span className="badge">
-              Conta: <b>{user.email}</b>
-            </span>
-            <span className="badge">
-              Plano: <b>{plan || "free"}</b>
-            </span>
+        {profileError ? (
+          <div className="container" style={{ marginTop: 12 }}>
+            <div className="muted">Erro: {profileError}</div>
           </div>
+        ) : null}
 
-          <div className="muted" style={{ fontSize: 13, marginBottom: 16 }}>
-            Depois que o pagamento for aprovado, seu acesso libera automaticamente.
-          </div>
-
+        <div className="container" style={{ marginTop: 10 }}>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <button className="btn primary" type="button" onClick={openCheckout}>
               Assinar agora
             </button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() => window.location.reload()}
-              title="Se você já pagou, clique aqui para checar novamente"
-            >
-              Já paguei
+            <button className="btn" type="button" onClick={onAlreadyPaid}>
+              Já paguei, atualizar
             </button>
           </div>
 
-          <div className="hr" />
-
-          <div className="muted" style={{ fontSize: 12 }}>
+          <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
             Se você pagou com outro e-mail, entre com o mesmo e-mail usado no pagamento.
+          </div>
+
+          <div className="row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <span className="badge">
+              Status: <b>{subscriptionStatus === "active" ? "Ativa" : "Inativa"}</b>
+            </span>
+            <span className="badge">
+              Plano: <b>{plan || "free"}</b>
+            </span>
+            {paidUntil ? (
+              <span className="badge">
+                Válido até: <b>{new Date(paidUntil).toLocaleDateString("pt-BR")}</b>
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

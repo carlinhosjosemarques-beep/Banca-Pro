@@ -4,6 +4,7 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl }) 
   const msg = useMemo(() => {
     if (status === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
     if (status === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
+    if (status === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
     return "Seu acesso ainda não está ativo. Assine para liberar o Banca Pro.";
   }, [status]);
 
@@ -16,21 +17,14 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl }) 
               {displayName ? `Olá, ${displayName} 👋` : "Olá 👋"}
             </div>
             <h2 style={{ marginTop: 6 }}>Acesso bloqueado</h2>
-            <div className="muted" style={{ marginTop: 6 }}>
-              {msg}
-            </div>
+            <div className="muted" style={{ marginTop: 6 }}>{msg}</div>
           </div>
 
           <div className="row" style={{ gap: 10, alignItems: "center" }}>
             <span className="badge">
-              Status:{" "}
-              <b style={{ textTransform: "uppercase" }}>
-                {status || "inactive"}
-              </b>
+              Status: <b style={{ textTransform: "uppercase" }}>{status || "inactive"}</b>
             </span>
-            <button className="btn" type="button" onClick={onLogout}>
-              Sair
-            </button>
+            <button className="btn" type="button" onClick={onLogout}>Sair</button>
           </div>
         </div>
 
@@ -59,8 +53,8 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl }) 
               <a className="btn primary" href={checkoutUrl} target="_blank" rel="noreferrer">
                 Assinar agora
               </a>
-              <button className="btn" type="button" onClick={() => location.reload()}>
-                Já paguei, atualizar
+              <button className="btn" type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+                Voltar ao topo
               </button>
             </div>
 
