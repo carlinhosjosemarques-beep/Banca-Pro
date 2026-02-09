@@ -1,46 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-function pickEmail(payload) {
-  return (
-    payload?.customer?.email ||
-    payload?.buyer?.email ||
-    payload?.data?.customer?.email ||
-    payload?.data?.buyer?.email ||
-    payload?.email ||
-    null
-  );
-}
-
-function pickEvent(payload) {
-  return payload?.event || payload?.type || payload?.name || "";
-}
-
-function isPaidEvent(ev) {
-  const e = String(ev || "").toLowerCase();
-  return (
-    e.includes("aprov") ||
-    e.includes("approved") ||
-    e.includes("paid") ||
-    e.includes("compra_aprovada") ||
-    e.includes("assinatura_renovada") ||
-    e.includes("assinatura_aprovada") ||
-    e.includes("subscription_active")
-  );
-}
-
-function isCanceledEvent(ev) {
-  const e = String(ev || "").toLowerCase();
-  return (
-    e.includes("cancel") ||
-    e.includes("reemb") ||
-    e.includes("refun") ||
-    e.includes("chargeback") ||
-    e.includes("atrasad") ||
-    e.includes("charge_failed") ||
-    e.includes("subscription_inactive") ||
-    e.includes("assinatura_cancelada") ||
-    e.includes("assinatura_atrasada")
-  );
+function toLowerSafe(v) {
+  return String(v || "").toLowerCase();
 }
 
 function addDaysISO(days) {
@@ -62,59 +23,101 @@ export default async function handler(req, res) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceKey) {
-      return res.status(500).json({ error: "missing_env", note: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set" });
+      return res.status(500).json({ error: "missing_env" });
     }
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
     const payload = req.body || {};
-    const event = pickEvent(payload);
-    const email = pickEmail(payload);
+
+    const eventRaw =
+      payload?.event ||
+      payload?.type ||
+      payload?.name ||
+      payload?.data?.event ||
+      payload?.data?.type ||
+      "";
+
+    const ev = toLowerSafe(eventRaw);
+
+    const email =
+      payload?.customer?.email ||
+      payload?.buyer?.email ||
+      payload?.data?.customer?.email ||
+      payload?.data?.buyer?.email ||
+      payload?.email ||
+      null;
 
     if (!email) return res.status(200).json({ ok: true, note: "no_email_in_payload" });
 
-    const paid = isPaidEvent(event);
-    const canceled = isCanceledEvent(event);
+    const isApproved =
+      ev.includes("compra_aprov") ||
+      ev.includes("approved") ||
+      ev.includes("aprovada") ||
+      ev.includes("assinatura_renov") ||
+      ev.includes("renovada") ||
+      ev.includes("subscription_renew") ||
+      ev.includes("subscription_active");
 
-    if (!paid && !canceled) {
-      return res.status(200).json({ ok: true, note: "ignored_event", event });
+    const isCanceledOrBad =
+      ev.includes("reembolso") ||
+      ev.includes("refund") ||
+      ev.includes("chargeback") ||
+      ev.includes("cancel") ||
+      ev.includes("assinatura_cancel") ||
+      ev.includes("assinatura_atras") ||
+      ev.includes("past_due") ||
+      ev.includes("recusada") ||
+      ev.includes("compra_recus");
+
+    if (!isApproved && !isCanceledOrBad) {
+      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw });
     }
 
-    // acha profile por email (seu print mostra que email existe e user_id está NULL)
-    const { data: profile, error: pErr } = await supabaseAdmin
-      .from("profiles")
-      .select("id,email")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (pErr) throw pErr;
-
-    if (!profile?.id) {
-      return res.status(200).json({ ok: true, note: "profile_not_found_for_email", email });
-    }
-
-    const patch = paid
-      ? {
-          plan: "premium",
-          subscription_status: "active",
-          paid_until: payload?.data?.paid_until || payload?.paid_until || addDaysISO(35),
-          email,
-        }
-      : {
-          plan: "free",
-          subscription_status: "inactive",
-          paid_until: null,
-          email,
-        };
-
-    const { error: uErr } = await supabaseAdmin
-      .from("profiles")
-      .update(patch)
-      .eq("id", profile.id);
-
+    const { data: userByEmail, error: uErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
     if (uErr) throw uErr;
 
-    return res.status(200).json({ ok: true, event, email });
+    const uid = userByEmail?.user?.id;
+    if (!uid) {
+      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email" });
+    }
+
+    const paidUntil =
+      payload?.paid_until ||
+      payload?.data?.paid_until ||
+      payload?.data?.premium_until ||
+      payload?.premium_until ||
+      null;
+
+    const patch = isApproved
+      ? {
+          id: uid,
+          email,
+          plan: "premium",
+          subscription_status: "active",
+          paid_until: paidUntil ? new Date(paidUntil).toISOString() : addDaysISO(31),
+          kiwify_customer_email: email,
+          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          id: uid,
+          email,
+          plan: "free",
+          subscription_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
+          paid_until: null,
+          kiwify_customer_email: email,
+          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
+          updated_at: new Date().toISOString(),
+        };
+
+    const { error: upErr } = await supabaseAdmin
+      .from("profiles")
+      .upsert(patch, { onConflict: "id" });
+
+    if (upErr) throw upErr;
+
+    return res.status(200).json({ ok: true, uid, email, status: patch.subscription_status });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }

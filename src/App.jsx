@@ -25,18 +25,6 @@ function useIsMobile(max = 720) {
   return is;
 }
 
-const CHECKOUT_FALLBACK = "https://pay.kiwify.com.br/ppcESel";
-
-function getCheckoutUrl() {
-  const url = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
-  return (url && String(url).trim()) || CHECKOUT_FALLBACK;
-}
-
-function openCheckout() {
-  const url = getCheckoutUrl();
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 function LogoMark() {
   return (
     <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
@@ -81,7 +69,10 @@ function IconMoon() {
 function IconUser() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
-      <path fill="currentColor" d="M12 12a4 4 0 1 0-4-4a4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
+      <path
+        fill="currentColor"
+        d="M12 12a4 4 0 1 0-4-4a4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"
+      />
     </svg>
   );
 }
@@ -116,6 +107,19 @@ export default function App() {
 
   const refreshTimerRef = useRef(null);
 
+  const checkoutUrl = useMemo(() => {
+    const envUrl = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
+    const fixed = "https://pay.kiwify.com.br/ppcESel";
+    const u = (envUrl || "").trim();
+    if (!u) return fixed;
+    if (u.startsWith("http://") || u.startsWith("https://")) return u;
+    return fixed;
+  }, []);
+
+  function openCheckout() {
+    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("banca_theme", theme);
@@ -123,43 +127,47 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session?.user ?? null);
-    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
+
+  async function ensureProfile(uid, email) {
+    const patch = {
+      id: uid,
+      email: email || null,
+      plan: "free",
+      subscription_status: "inactive",
+      paid_until: null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from("profiles").upsert(patch, { onConflict: "id" });
+    if (error) throw error;
+  }
 
   async function fetchProfile(uid, email) {
     setProfileError("");
     setLoadingProfile(true);
 
     try {
-      let data = null;
-      let error = null;
-
-      // 1) padrão (profiles.id = auth.user.id)
-      {
-        const r = await supabase
-          .from("profiles")
-          .select("display_name,plan,subscription_status,paid_until,email")
-          .eq("id", uid)
-          .maybeSingle();
-        data = r.data;
-        error = r.error;
-      }
-
-      // 2) fallback por email (quando seu profiles.id não bate com auth.uid por algum motivo)
-      if (!data && !error && email) {
-        const r2 = await supabase
-          .from("profiles")
-          .select("display_name,plan,subscription_status,paid_until,email")
-          .eq("email", email)
-          .maybeSingle();
-        data = r2.data;
-        error = r2.error;
-      }
+      let { data, error } = await supabase
+        .from("profiles")
+        .select("display_name,plan,subscription_status,paid_until")
+        .eq("id", uid)
+        .maybeSingle();
 
       if (error) throw error;
+
+      if (!data) {
+        await ensureProfile(uid, email);
+        const r2 = await supabase
+          .from("profiles")
+          .select("display_name,plan,subscription_status,paid_until")
+          .eq("id", uid)
+          .maybeSingle();
+        if (r2.error) throw r2.error;
+        data = r2.data;
+      }
 
       setDisplayName(data?.display_name || "");
       setPlan(data?.plan || "free");
@@ -185,7 +193,7 @@ export default function App() {
       await fetchProfile(user.id, user.email);
 
       channel = supabase
-        .channel("profile-premium-" + user.id)
+        .channel("profile-" + user.id)
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
@@ -213,23 +221,17 @@ export default function App() {
   }, [user?.id]);
 
   const saudacao = useMemo(() => {
-    const h = new Date().getHours();
-    const hi = helloByHour(h);
+    const hi = helloByHour(new Date().getHours());
     const nm = (displayName || "").trim();
     return nm ? `${hi}, ${nm}!` : `${hi}!`;
   }, [displayName]);
 
   const isPremium = useMemo(() => {
-    const statusOk = String(subscriptionStatus || "").toLowerCase() === "active";
-    const planOk = String(plan || "").toLowerCase() === "premium";
-
-    if (!statusOk && !planOk) return false;
-
+    if (subscriptionStatus !== "active") return false;
     if (!paidUntil) return true;
-
     const t = new Date(paidUntil).getTime();
     return Number.isFinite(t) ? t > Date.now() : true;
-  }, [subscriptionStatus, plan, paidUntil]);
+  }, [subscriptionStatus, paidUntil]);
 
   async function sair() {
     if (refreshTimerRef.current) {
@@ -248,13 +250,13 @@ export default function App() {
 
     const start = Date.now();
     refreshTimerRef.current = setInterval(async () => {
-      if (Date.now() - start > 90_000) {
+      if (Date.now() - start > 60_000) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
         return;
       }
       await fetchProfile(user.id, user.email);
-    }, 3500);
+    }, 4000);
   }
 
   const themeLabel = theme === "dark" ? "Modo claro" : "Modo escuro";
@@ -281,8 +283,6 @@ export default function App() {
   }
 
   if (!isPremium) {
-    const checkoutUrl = getCheckoutUrl();
-
     return (
       <div>
         <div className="container" style={{ paddingTop: 24 }}>
@@ -330,9 +330,10 @@ export default function App() {
         <Paywall
           displayName={displayName}
           status={subscriptionStatus}
-          checkoutUrl={checkoutUrl}
           onLogout={sair}
+          checkoutUrl={checkoutUrl}
           onAlreadyPaid={onAlreadyPaid}
+          onOpenCheckout={openCheckout}
         />
 
         {profileError ? (
@@ -354,6 +355,10 @@ export default function App() {
                 Válido até: <b>{new Date(paidUntil).toLocaleDateString("pt-BR")}</b>
               </span>
             ) : null}
+          </div>
+
+          <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+            Se você pagou com outro e-mail, entre com o mesmo e-mail usado no pagamento.
           </div>
         </div>
       </div>
