@@ -10,11 +10,26 @@ function addDaysISO(days) {
   return d.toISOString();
 }
 
+function pickEmail(payload) {
+  return (
+    payload?.customer?.email ||
+    payload?.buyer?.email ||
+    payload?.data?.customer?.email ||
+    payload?.data?.buyer?.email ||
+    payload?.email ||
+    payload?.customer_email ||
+    null
+  );
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
   try {
-    const token = req.query.token;
+    // evita warning (url.parse)
+    const url = new URL(req.url, "http://localhost");
+    const token = url.searchParams.get("token");
+
     if (!token || token !== process.env.KIWIFY_WEBHOOK_TOKEN) {
       return res.status(401).json({ error: "invalid_token" });
     }
@@ -26,7 +41,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "missing_env" });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false },
+    });
 
     const payload = req.body || {};
 
@@ -40,14 +57,7 @@ export default async function handler(req, res) {
 
     const ev = toLowerSafe(eventRaw);
 
-    const email =
-      payload?.customer?.email ||
-      payload?.buyer?.email ||
-      payload?.data?.customer?.email ||
-      payload?.data?.buyer?.email ||
-      payload?.email ||
-      null;
-
+    const email = pickEmail(payload);
     if (!email) return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
 
     const isApproved =
@@ -73,49 +83,94 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
-    const { data: userByEmail, error: uErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    if (uErr) throw uErr;
-
-    const uid = userByEmail?.user?.id;
-    if (!uid) {
-      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email", email, event: eventRaw });
+    // tenta pegar o uid, mas NÃO depende disso
+    let uid = null;
+    try {
+      const { data: userByEmail } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+      uid = userByEmail?.user?.id || null;
+    } catch {
+      uid = null;
     }
 
-    const paidUntil =
+    const paidUntilRaw =
       payload?.paid_until ||
       payload?.data?.paid_until ||
       payload?.data?.premium_until ||
       payload?.premium_until ||
       null;
 
+    const activeUntil = paidUntilRaw
+      ? new Date(paidUntilRaw).toISOString()
+      : addDaysISO(31);
+
+    const status = isApproved
+      ? "active"
+      : ev.includes("past_due") || ev.includes("atras")
+      ? "past_due"
+      : "inactive";
+
     const patch = isApproved
       ? {
-          id: uid,
+          // se tiver uid, salva também
+          ...(uid ? { id: uid, user_id: uid } : {}),
           email,
+
+          // família 1
           plan: "premium",
           subscription_status: "active",
-          paid_until: paidUntil ? new Date(paidUntil).toISOString() : addDaysISO(31),
+          paid_until: activeUntil,
+
+          // família 2
+          plan_status: "active",
+          is_premium: true,
+          premium_until: activeUntil,
+
           updated_at: new Date().toISOString(),
         }
       : {
-          id: uid,
+          ...(uid ? { id: uid, user_id: uid } : {}),
           email,
+
           plan: "free",
-          subscription_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
+          subscription_status: status,
           paid_until: null,
+
+          plan_status: status,
+          is_premium: false,
+          premium_until: null,
+
           updated_at: new Date().toISOString(),
         };
 
-    const { error: upErr } = await supabaseAdmin.from("profiles").upsert(patch, { onConflict: "id" });
-    if (upErr) throw upErr;
+    // ✅ Atualiza SEMPRE pelo e-mail (é isso que faltava)
+    // 1) tenta update por email
+    const upd = await supabaseAdmin
+      .from("profiles")
+      .update(patch)
+      .eq("email", email)
+      .select("id")
+      .maybeSingle();
+
+    if (upd.error) throw upd.error;
+
+    // 2) se não existia linha com esse email, cria
+    if (!upd.data) {
+      const ins = await supabaseAdmin
+        .from("profiles")
+        .insert(patch)
+        .select("id")
+        .maybeSingle();
+
+      if (ins.error) throw ins.error;
+    }
 
     return res.status(200).json({
       ok: true,
-      note: "profile_updated",
+      note: "profile_updated_by_email",
       uid,
       email,
       event: eventRaw,
-      status: patch.subscription_status,
+      status,
       plan: patch.plan,
       paid_until: patch.paid_until,
     });

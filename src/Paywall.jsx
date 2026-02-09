@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 
-export default function Paywall({ displayName, status, onLogout, checkoutUrl, onAlreadyPaid, onOpenCheckout }) {
+export default function Paywall({ displayName, status, onLogout, checkoutUrl, onCheckout, onRefresh }) {
   const msg = useMemo(() => {
-    if (status === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
-    if (status === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
-    if (status === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
+    const s = String(status || "").toLowerCase();
+    if (s === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
+    if (s === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
+    if (s === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
     return "Seu acesso ainda não está ativo. Assine para liberar o Banca Pro.";
   }, [status]);
 
@@ -50,19 +51,15 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl, on
             </div>
 
             <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-              <button className="btn primary" type="button" onClick={onOpenCheckout}>
+              <button className="btn primary" type="button" onClick={onCheckout || (() => window.open(checkoutUrl, "_blank", "noopener,noreferrer"))}>
                 Assinar agora
               </button>
-              <button className="btn" type="button" onClick={onAlreadyPaid}>
+              <button className="btn" type="button" onClick={onRefresh}>
                 Já paguei, atualizar
               </button>
             </div>
 
             <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-              Checkout: {checkoutUrl}
-            </div>
-
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
               Use o mesmo e-mail do pagamento pra criar sua conta.
             </div>
           </div>

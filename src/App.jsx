@@ -25,6 +25,15 @@ function useIsMobile(max = 720) {
   return is;
 }
 
+function openCheckout() {
+  const url = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
+  if (!url) {
+    alert("Checkout não configurado. Falta VITE_KIWIFY_CHECKOUT_URL no .env / Vercel");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function LogoMark() {
   return (
     <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
@@ -88,6 +97,31 @@ function IconLogout() {
   );
 }
 
+function toTime(x) {
+  const t = new Date(x).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function computeIsPremium(p) {
+  const plan = (p?.plan || "").toLowerCase();
+  const sub = (p?.subscription_status || "").toLowerCase();
+  const planStatus = (p?.plan_status || "").toLowerCase();
+
+  const paidUntil = p?.paid_until ?? p?.premium_until ?? null;
+  const paidTime = paidUntil ? toTime(paidUntil) : NaN;
+  const hasValidUntil = Number.isFinite(paidTime) ? paidTime > Date.now() : false;
+
+  const isPremiumFlag = p?.is_premium === true;
+
+  const activeByStatus =
+    sub === "active" || planStatus === "active" || sub === "approved" || sub === "paid";
+
+  const premiumByPlan =
+    plan === "premium" || plan === "pro" || plan === "paid";
+
+  return activeByStatus || premiumByPlan || isPremiumFlag || hasValidUntil;
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [tab, setTab] = useState("dashboard");
@@ -102,23 +136,15 @@ export default function App() {
   const [plan, setPlan] = useState("free");
   const [subscriptionStatus, setSubscriptionStatus] = useState("inactive");
   const [paidUntil, setPaidUntil] = useState(null);
+
+  const [planStatus, setPlanStatus] = useState("inactive");
+  const [isPremiumFlag, setIsPremiumFlag] = useState(false);
+  const [premiumUntil, setPremiumUntil] = useState(null);
+
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState("");
 
   const refreshTimerRef = useRef(null);
-
-  const checkoutUrl = useMemo(() => {
-    const envUrl = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
-    const fixed = "https://pay.kiwify.com.br/ppcESel";
-    const u = (envUrl || "").trim();
-    if (!u) return fixed;
-    if (u.startsWith("http://") || u.startsWith("https://")) return u;
-    return fixed;
-  }, []);
-
-  function openCheckout() {
-    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
-  }
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -127,58 +153,51 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => setUser(session?.user ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null);
+    });
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
-
-  async function ensureProfile(uid, email) {
-    const patch = {
-      id: uid,
-      email: email || null,
-      plan: "free",
-      subscription_status: "inactive",
-      paid_until: null,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await supabase.from("profiles").upsert(patch, { onConflict: "id" });
-    if (error) throw error;
-  }
 
   async function fetchProfile(uid, email) {
     setProfileError("");
     setLoadingProfile(true);
 
     try {
-      let { data, error } = await supabase
-        .from("profiles")
-        .select("display_name,plan,subscription_status,paid_until")
-        .eq("id", uid)
-        .maybeSingle();
+      const baseSelect =
+        "display_name,plan,subscription_status,paid_until,plan_status,is_premium,premium_until";
+
+      // 1) padrão: id = auth.uid
+      let r = await supabase.from("profiles").select(baseSelect).eq("id", uid).maybeSingle();
+      let data = r.data;
+      let error = r.error;
+
+      // 2) fallback: user_id = auth.uid
+      if (!data && !error) {
+        const r2 = await supabase.from("profiles").select(baseSelect).eq("user_id", uid).maybeSingle();
+        data = r2.data;
+        error = r2.error;
+      }
+
+      // 3) fallback: email (muito comum no webhook atualizar por email)
+      if (!data && !error && email) {
+        const r3 = await supabase.from("profiles").select(baseSelect).eq("email", email).maybeSingle();
+        data = r3.data;
+        error = r3.error;
+      }
 
       if (error) throw error;
-
-      if (!data) {
-        await ensureProfile(uid, email);
-        const r2 = await supabase
-          .from("profiles")
-          .select("display_name,plan,subscription_status,paid_until")
-          .eq("id", uid)
-          .maybeSingle();
-        if (r2.error) throw r2.error;
-        data = r2.data;
-      }
 
       setDisplayName(data?.display_name || "");
       setPlan(data?.plan || "free");
       setSubscriptionStatus(data?.subscription_status || "inactive");
       setPaidUntil(data?.paid_until ?? null);
+
+      setPlanStatus(data?.plan_status || "inactive");
+      setIsPremiumFlag(data?.is_premium === true);
+      setPremiumUntil(data?.premium_until ?? null);
     } catch (e) {
       setProfileError(e?.message || "Erro ao carregar perfil");
-      setDisplayName("");
-      setPlan("free");
-      setSubscriptionStatus("inactive");
-      setPaidUntil(null);
     } finally {
       setLoadingProfile(false);
     }
@@ -193,17 +212,22 @@ export default function App() {
       await fetchProfile(user.id, user.email);
 
       channel = supabase
-        .channel("profile-" + user.id)
+        .channel("profile-premium-" + user.id)
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
           (payload) => {
             const next = payload?.new;
             if (!next) return;
+
             setDisplayName(next.display_name || "");
             setPlan(next.plan || "free");
             setSubscriptionStatus(next.subscription_status || "inactive");
             setPaidUntil(next.paid_until ?? null);
+
+            setPlanStatus(next.plan_status || "inactive");
+            setIsPremiumFlag(next.is_premium === true);
+            setPremiumUntil(next.premium_until ?? null);
           }
         )
         .subscribe();
@@ -221,17 +245,22 @@ export default function App() {
   }, [user?.id]);
 
   const saudacao = useMemo(() => {
-    const hi = helloByHour(new Date().getHours());
+    const h = new Date().getHours();
+    const hi = helloByHour(h);
     const nm = (displayName || "").trim();
     return nm ? `${hi}, ${nm}!` : `${hi}!`;
   }, [displayName]);
 
   const isPremium = useMemo(() => {
-    if (subscriptionStatus !== "active") return false;
-    if (!paidUntil) return true;
-    const t = new Date(paidUntil).getTime();
-    return Number.isFinite(t) ? t > Date.now() : true;
-  }, [subscriptionStatus, paidUntil]);
+    return computeIsPremium({
+      plan,
+      subscription_status: subscriptionStatus,
+      paid_until: paidUntil,
+      plan_status: planStatus,
+      is_premium: isPremiumFlag,
+      premium_until: premiumUntil,
+    });
+  }, [plan, subscriptionStatus, paidUntil, planStatus, isPremiumFlag, premiumUntil]);
 
   async function sair() {
     if (refreshTimerRef.current) {
@@ -246,6 +275,7 @@ export default function App() {
 
     await fetchProfile(user.id, user.email);
 
+    // opcional: tenta por 60s (webhook pode demorar)
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
 
     const start = Date.now();
@@ -329,11 +359,11 @@ export default function App() {
 
         <Paywall
           displayName={displayName}
-          status={subscriptionStatus}
+          status={subscriptionStatus || planStatus || "inactive"}
+          checkoutUrl={import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "#"}
           onLogout={sair}
-          checkoutUrl={checkoutUrl}
-          onAlreadyPaid={onAlreadyPaid}
-          onOpenCheckout={openCheckout}
+          onCheckout={openCheckout}
+          onRefresh={onAlreadyPaid}
         />
 
         {profileError ? (
@@ -343,16 +373,17 @@ export default function App() {
         ) : null}
 
         <div className="container" style={{ marginTop: 10 }}>
-          <div className="row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <span className="badge">
-              Status: <b>{subscriptionStatus === "active" ? "Ativa" : "Inativa"}</b>
+              Status: <b>{(subscriptionStatus || planStatus) === "active" ? "Ativa" : "Inativa"}</b>
             </span>
             <span className="badge">
               Plano: <b>{plan || "free"}</b>
             </span>
-            {paidUntil ? (
+            {paidUntil || premiumUntil ? (
               <span className="badge">
-                Válido até: <b>{new Date(paidUntil).toLocaleDateString("pt-BR")}</b>
+                Válido até:{" "}
+                <b>{new Date(paidUntil || premiumUntil).toLocaleDateString("pt-BR")}</b>
               </span>
             ) : null}
           </div>
