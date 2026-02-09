@@ -25,6 +25,17 @@ function useIsMobile(max = 720) {
   return is;
 }
 
+function getCheckoutUrl() {
+  // ⚠️ Vite injeta env no BUILD, então precisa redeploy quando mudar no Vercel.
+  const url = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
+  return (url && String(url).trim()) || "https://pay.kiwify.com.br/ppcESel";
+}
+
+function openCheckout() {
+  const url = getCheckoutUrl();
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function LogoMark() {
   return (
     <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
@@ -88,6 +99,32 @@ function IconLogout() {
   );
 }
 
+function normalizeStatus(row) {
+  // aceita qualquer um desses schemas
+  const s =
+    row?.subscription_status ||
+    row?.plan_status ||
+    (row?.is_premium ? "active" : "inactive") ||
+    "inactive";
+
+  return String(s).toLowerCase();
+}
+
+function normalizePaidUntil(row) {
+  return row?.paid_until ?? row?.premium_until ?? null;
+}
+
+function isPremiumFromRow(row) {
+  const status = normalizeStatus(row);
+  if (status !== "active") return false;
+
+  const pu = normalizePaidUntil(row);
+  if (!pu) return true;
+
+  const t = new Date(pu).getTime();
+  return Number.isFinite(t) ? t > Date.now() : true;
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined);
   const [tab, setTab] = useState("dashboard");
@@ -102,22 +139,11 @@ export default function App() {
   const [plan, setPlan] = useState("free");
   const [subscriptionStatus, setSubscriptionStatus] = useState("inactive");
   const [paidUntil, setPaidUntil] = useState(null);
+
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState("");
 
   const refreshTimerRef = useRef(null);
-
-  const CHECKOUT_URL = (import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "").trim();
-
-  function openCheckout() {
-    const url = (import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "").trim();
-    console.log("CHECKOUT_URL =", url);
-    if (!url) {
-      alert("Checkout não configurado. Falta VITE_KIWIFY_CHECKOUT_URL na Vercel.");
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -132,21 +158,38 @@ export default function App() {
     return () => sub?.subscription?.unsubscribe?.();
   }, []);
 
+  function applyProfileRow(row) {
+    setDisplayName(row?.display_name || "");
+    setPlan(row?.plan || (row?.is_premium || row?.plan_status === "active" ? "pro" : "free"));
+
+    const st = normalizeStatus(row);
+    setSubscriptionStatus(st);
+
+    const pu = normalizePaidUntil(row);
+    setPaidUntil(pu);
+  }
+
   async function fetchProfile(uid) {
     setProfileError("");
     setLoadingProfile(true);
 
     try {
+      // tenta o schema padrão (profiles.id = auth.user.id)
       let { data, error } = await supabase
         .from("profiles")
-        .select("display_name,plan,subscription_status,paid_until")
+        .select(
+          "display_name,plan,subscription_status,paid_until,is_premium,plan_status,premium_until"
+        )
         .eq("id", uid)
         .maybeSingle();
 
+      // fallback se for profiles.user_id
       if (!data && !error) {
         const r2 = await supabase
           .from("profiles")
-          .select("display_name,plan,subscription_status,paid_until")
+          .select(
+            "display_name,plan,subscription_status,paid_until,is_premium,plan_status,premium_until"
+          )
           .eq("user_id", uid)
           .maybeSingle();
         data = r2.data;
@@ -155,10 +198,7 @@ export default function App() {
 
       if (error) throw error;
 
-      setDisplayName(data?.display_name || "");
-      setPlan(data?.plan || "free");
-      setSubscriptionStatus(data?.subscription_status || "inactive");
-      setPaidUntil(data?.paid_until ?? null);
+      applyProfileRow(data || {});
     } catch (e) {
       setProfileError(e?.message || "Erro ao carregar perfil");
     } finally {
@@ -174,27 +214,37 @@ export default function App() {
 
       await fetchProfile(user.id);
 
+      // realtime: tenta updates por id
       channel = supabase
         .channel("profile-premium-" + user.id)
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${user.id}` },
-          (payload) => {
-            const next = payload?.new;
-            if (!next) return;
-            setDisplayName(next.display_name || "");
-            setPlan(next.plan || "free");
-            setSubscriptionStatus(next.subscription_status || "inactive");
-            setPaidUntil(next.paid_until ?? null);
-          }
+          (payload) => applyProfileRow(payload?.new || {})
         )
         .subscribe();
+
+      // fallback: se o seu schema usa user_id, deixa um canal extra
+      const channel2 = supabase
+        .channel("profile-premium-userid-" + user.id)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "profiles", filter: `user_id=eq.${user.id}` },
+          (payload) => applyProfileRow(payload?.new || {})
+        )
+        .subscribe();
+
+      // junta os canais (remove os dois no cleanup)
+      channel._bp_channel2 = channel2;
     }
 
     loadAndSubscribe();
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      if (channel) {
+        if (channel._bp_channel2) supabase.removeChannel(channel._bp_channel2);
+        supabase.removeChannel(channel);
+      }
       if (refreshTimerRef.current) {
         clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
@@ -210,10 +260,12 @@ export default function App() {
   }, [displayName]);
 
   const isPremium = useMemo(() => {
-    if (subscriptionStatus !== "active") return false;
-    if (!paidUntil) return true;
-    const t = new Date(paidUntil).getTime();
-    return Number.isFinite(t) ? t > Date.now() : true;
+    return isPremiumFromRow({
+      subscription_status: subscriptionStatus,
+      paid_until: paidUntil,
+      // compat
+      is_premium: subscriptionStatus === "active" && !paidUntil ? true : false,
+    });
   }, [subscriptionStatus, paidUntil]);
 
   async function sair() {
@@ -266,6 +318,8 @@ export default function App() {
   }
 
   if (!isPremium) {
+    const checkoutUrl = getCheckoutUrl();
+
     return (
       <div>
         <div className="container" style={{ paddingTop: 24 }}>
@@ -310,7 +364,13 @@ export default function App() {
           </div>
         </div>
 
-        <Paywall displayName={displayName} status={subscriptionStatus} checkoutUrl={CHECKOUT_URL || "#"} onLogout={sair} />
+        <Paywall
+          displayName={displayName}
+          status={subscriptionStatus}
+          checkoutUrl={checkoutUrl}
+          onLogout={sair}
+          onRefresh={onAlreadyPaid}
+        />
 
         {profileError ? (
           <div className="container" style={{ marginTop: 12 }}>

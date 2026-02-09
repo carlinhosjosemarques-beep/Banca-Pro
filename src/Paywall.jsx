@@ -1,12 +1,15 @@
 import { useMemo } from "react";
 
-export default function Paywall({ displayName, status, onLogout, checkoutUrl }) {
+export default function Paywall({ displayName, status, onLogout, checkoutUrl, onRefresh }) {
   const msg = useMemo(() => {
-    if (status === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
-    if (status === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
-    if (status === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
+    const s = String(status || "inactive").toLowerCase();
+    if (s === "past_due") return "Sua mensalidade está em atraso. Regularize pra voltar a usar.";
+    if (s === "canceled") return "Sua assinatura foi cancelada. Assine novamente pra continuar.";
+    if (s === "active") return "Seu pagamento foi aprovado. Se não liberou ainda, clique em atualizar.";
     return "Seu acesso ainda não está ativo. Assine para liberar o Banca Pro.";
   }, [status]);
+
+  const safeUrl = (checkoutUrl && String(checkoutUrl).trim()) || "https://pay.kiwify.com.br/ppcESel";
 
   return (
     <div className="container" style={{ maxWidth: 980 }}>
@@ -50,11 +53,11 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl }) 
             </div>
 
             <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-              <a className="btn primary" href={checkoutUrl} target="_blank" rel="noreferrer">
+              <a className="btn primary" href={safeUrl} target="_blank" rel="noreferrer">
                 Assinar agora
               </a>
-              <button className="btn" type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
-                Voltar ao topo
+              <button className="btn" type="button" onClick={onRefresh}>
+                Já paguei, atualizar
               </button>
             </div>
 

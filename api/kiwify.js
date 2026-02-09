@@ -1,5 +1,66 @@
 import { createClient } from "@supabase/supabase-js";
 
+function pickEmail(payload) {
+  return (
+    payload?.customer?.email ||
+    payload?.buyer?.email ||
+    payload?.data?.customer?.email ||
+    payload?.data?.buyer?.email ||
+    payload?.email ||
+    null
+  );
+}
+
+function pickEvent(payload) {
+  return payload?.event || payload?.type || payload?.name || payload?.data?.event || "";
+}
+
+function isPaidEvent(ev) {
+  const e = String(ev || "").toLowerCase();
+  return (
+    e.includes("compra_aprovada") ||
+    e.includes("aprov") ||
+    e.includes("approved") ||
+    e.includes("paid") ||
+    e.includes("assinatura_renovada") ||
+    e.includes("subscription_active")
+  );
+}
+
+function isCanceledEvent(ev) {
+  const e = String(ev || "").toLowerCase();
+  return (
+    e.includes("assinatura_cancelada") ||
+    e.includes("cancel") ||
+    e.includes("reemb") ||
+    e.includes("refun") ||
+    e.includes("chargeback") ||
+    e.includes("assinatura_atrasada") ||
+    e.includes("past_due") ||
+    e.includes("charge_failed") ||
+    e.includes("subscription_inactive")
+  );
+}
+
+function fallbackPaidUntilISO(payload) {
+  // tenta pegar alguma data do payload (se existir) e se não tiver, dá 32 dias de folga
+  const cand =
+    payload?.data?.paid_until ||
+    payload?.data?.premium_until ||
+    payload?.paid_until ||
+    payload?.premium_until ||
+    payload?.subscription?.paid_until ||
+    payload?.subscription?.next_charge_date ||
+    payload?.data?.subscription?.next_charge_date ||
+    null;
+
+  const t = cand ? new Date(cand).getTime() : NaN;
+  if (Number.isFinite(t)) return new Date(t).toISOString();
+
+  const plus32 = Date.now() + 32 * 24 * 60 * 60 * 1000;
+  return new Date(plus32).toISOString();
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "method_not_allowed" });
@@ -24,115 +85,80 @@ export default async function handler(req, res) {
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
     const payload = req.body || {};
-    const eventRaw = payload?.event || payload?.type || payload?.name || "";
-    const ev = String(eventRaw).toLowerCase();
-
-    const email =
-      payload?.customer?.email ||
-      payload?.buyer?.email ||
-      payload?.data?.customer?.email ||
-      payload?.data?.buyer?.email ||
-      payload?.email ||
-      null;
+    const event = pickEvent(payload);
+    const email = pickEmail(payload);
 
     if (!email) {
       return res.status(200).json({ ok: true, note: "no_email_in_payload" });
     }
 
-    // Busca perfil pelo e-mail
-    // (compatível com tabelas que usam id OU user_id)
+    const paid = isPaidEvent(event);
+    const canceled = isCanceledEvent(event);
+
+    if (!paid && !canceled) {
+      return res.status(200).json({ ok: true, note: "ignored_event", event });
+    }
+
+    // acha o profile pelo email
     const { data: profile, error: pErr } = await supabaseAdmin
       .from("profiles")
-      .select("id,user_id,email")
+      .select("id,email,user_id")
       .eq("email", email)
       .maybeSingle();
 
     if (pErr) throw pErr;
 
-    const profileId = profile?.id || null;
-    const profileUserId = profile?.user_id || null;
-
-    if (!profileId && !profileUserId) {
-      return res.status(200).json({ ok: true, note: "user_not_found_for_email" });
+    if (!profile?.id && !profile?.user_id) {
+      return res.status(200).json({ ok: true, note: "user_not_found_for_email", email });
     }
 
-    // Eventos que liberam
-    const isPaid =
-      ev.includes("compra_aprov") ||
-      ev.includes("compra aprovad") ||
-      ev.includes("approved") ||
-      ev.includes("paid") ||
-      ev.includes("assinatura_renov") ||
-      ev.includes("assinatura renov") ||
-      ev.includes("subscription_active") ||
-      ev.includes("assinatura ativa");
+    const paidUntilISO = paid ? fallbackPaidUntilISO(payload) : null;
 
-    // Eventos que bloqueiam
-    const isBlocked =
-      ev.includes("compra_recus") ||
-      ev.includes("compra recus") ||
-      ev.includes("cancel") ||
-      ev.includes("reemb") ||
-      ev.includes("refun") ||
-      ev.includes("chargeback") ||
-      ev.includes("assinatura_cancel") ||
-      ev.includes("assinatura_atras") ||
-      ev.includes("past_due") ||
-      ev.includes("subscription_inactive");
-
-    if (!isPaid && !isBlocked) {
-      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw });
-    }
-
-    // ✅ Campos que o App.jsx lê
-    const patchCore = isPaid
+    const patch = paid
       ? {
+          // ✅ campos que o App usa
           subscription_status: "active",
+          paid_until: paidUntilISO,
           plan: "pro",
-          paid_until: null, // null = sem expiração (o app aceita como premium enquanto status=active)
-        }
-      : {
-          subscription_status: "inactive", // ou "canceled" / "past_due" se preferir
-          plan: "free",
-          paid_until: null,
-        };
 
-    // ✅ Mantém compatibilidade com seus campos antigos (se existirem)
-    const patchCompat = isPaid
-      ? {
+          // ✅ compat (se você usa isso em outros lugares)
           is_premium: true,
           plan_status: "active",
-          premium_until: null,
+          premium_until: paidUntilISO,
+
+          kiwify_customer_email: email,
+          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
         }
       : {
+          subscription_status: "inactive",
+          paid_until: null,
+          plan: "free",
+
           is_premium: false,
           plan_status: "inactive",
           premium_until: null,
+
+          kiwify_customer_email: email,
+          kiwify_subscription_id: payload?.subscription_id || payload?.data?.subscription_id || null,
         };
 
-    const patch = {
-      ...patchCore,
-      ...patchCompat,
-      kiwify_customer_email: email,
-      kiwify_subscription_id:
-        payload?.subscription_id || payload?.data?.subscription_id || payload?.data?.subscription?.id || null,
-      kiwify_last_event: eventRaw || null,
-    };
+    // tenta atualizar por id (schema padrão)
+    let uErr = null;
 
-    // Atualiza por id (padrão) e tenta também por user_id (fallback)
-    let updated = false;
-
-    if (profileId) {
-      const { error: u1 } = await supabaseAdmin.from("profiles").update(patch).eq("id", profileId);
-      if (u1) throw u1;
-      updated = true;
-    } else if (profileUserId) {
-      const { error: u2 } = await supabaseAdmin.from("profiles").update(patch).eq("user_id", profileUserId);
-      if (u2) throw u2;
-      updated = true;
+    if (profile?.id) {
+      const r = await supabaseAdmin.from("profiles").update(patch).eq("id", profile.id);
+      uErr = r.error || null;
     }
 
-    return res.status(200).json({ ok: true, updated, email, event: eventRaw });
+    // fallback: se seu schema usa user_id
+    if (!uErr && profile?.user_id) {
+      const r2 = await supabaseAdmin.from("profiles").update(patch).eq("user_id", profile.user_id);
+      uErr = r2.error || null;
+    }
+
+    if (uErr) throw uErr;
+
+    return res.status(200).json({ ok: true, event, email });
   } catch (e) {
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }
