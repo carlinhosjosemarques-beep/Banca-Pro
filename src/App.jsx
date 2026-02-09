@@ -25,15 +25,6 @@ function useIsMobile(max = 720) {
   return is;
 }
 
-function openCheckout() {
-  const url = import.meta.env.VITE_KIWIFY_CHECKOUT_URL;
-  if (!url) {
-    alert("Checkout não configurado. Falta VITE_KIWIFY_CHECKOUT_URL no .env");
-    return;
-  }
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 function LogoMark() {
   return (
     <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
@@ -116,6 +107,18 @@ export default function App() {
 
   const refreshTimerRef = useRef(null);
 
+  const CHECKOUT_URL = (import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "").trim();
+
+  function openCheckout() {
+    const url = (import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "").trim();
+    console.log("CHECKOUT_URL =", url);
+    if (!url) {
+      alert("Checkout não configurado. Falta VITE_KIWIFY_CHECKOUT_URL na Vercel.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("banca_theme", theme);
@@ -134,14 +137,12 @@ export default function App() {
     setLoadingProfile(true);
 
     try {
-      // ✅ Padrão: profiles.id = auth.user.id
       let { data, error } = await supabase
         .from("profiles")
         .select("display_name,plan,subscription_status,paid_until")
         .eq("id", uid)
         .maybeSingle();
 
-      // ✅ Fallback (caso seu banco use user_id)
       if (!data && !error) {
         const r2 = await supabase
           .from("profiles")
@@ -228,7 +229,6 @@ export default function App() {
 
     await fetchProfile(user.id);
 
-    // ✅ Opcional: checa automaticamente por 60s (caso webhook demore)
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
 
     const start = Date.now();
@@ -310,12 +310,7 @@ export default function App() {
           </div>
         </div>
 
-        <Paywall
-          displayName={displayName}
-          status={subscriptionStatus}
-          checkoutUrl={import.meta.env.VITE_KIWIFY_CHECKOUT_URL || "#"}
-          onLogout={sair}
-        />
+        <Paywall displayName={displayName} status={subscriptionStatus} checkoutUrl={CHECKOUT_URL || "#"} onLogout={sair} />
 
         {profileError ? (
           <div className="container" style={{ marginTop: 12 }}>
