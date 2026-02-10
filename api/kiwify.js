@@ -41,13 +41,12 @@ export default async function handler(req, res) {
     if (!expectedToken) return res.status(500).json({ error: "missing_env_token" });
 
     const incomingToken = getTokenFromRequest(req);
-
     const signature = String(req?.query?.signature || "").trim();
 
     const authorized = (incomingToken && incomingToken === expectedToken) || !!signature;
 
     if (!authorized) {
-      console.log("[KIWIFY] 401 - no token and no signature", {
+      console.log("[KIWIFY] 401 invalid_auth", {
         hasToken: !!incomingToken,
         hasSignature: !!signature,
         queryKeys: Object.keys(req?.query || {}),
@@ -60,7 +59,7 @@ export default async function handler(req, res) {
     }
 
     if (!incomingToken || incomingToken !== expectedToken) {
-      console.log("[KIWIFY] authorized by SIGNATURE (token ausente ou diferente)", {
+      console.log("[KIWIFY] authorized by SIGNATURE (token ausente/diferente)", {
         hasSignature: !!signature,
         queryKeys: Object.keys(req?.query || {}),
       });
@@ -71,9 +70,13 @@ export default async function handler(req, res) {
 
     if (!supabaseUrl || !serviceKey) return res.status(500).json({ error: "missing_env_supabase" });
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
     const payload = req.body || {};
 
+    // ✅ Kiwify pode mandar isso assim (teu log mostrou webhook_event_type e order_status)
     const eventRaw =
       payload?.webhook_event_type ||
       payload?.event ||
@@ -85,9 +88,9 @@ export default async function handler(req, res) {
       "";
 
     const ev = toLowerSafe(eventRaw);
-
     const orderStatus = toLowerSafe(payload?.order_status);
 
+    // ✅ Seu log mostrou: "Customer" com C maiúsculo
     const emailRaw =
       payload?.Customer?.email ||
       payload?.Customer?.Email ||
@@ -126,14 +129,15 @@ export default async function handler(req, res) {
     if (!email) {
       console.log("[KIWIFY] no_email_in_payload", {
         eventRaw,
+        ev,
         orderStatus,
         keys: Object.keys(payload || {}),
-        hasCustomerObj: !!payload?.Customer,
         customerKeys: payload?.Customer ? Object.keys(payload.Customer) : [],
       });
       return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
     }
 
+    // ✅ Aprovação / cancelamento usando event + order_status
     const isApproved =
       orderStatus === "paid" ||
       orderStatus === "approved" ||
@@ -171,17 +175,28 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
-    const { data: userByEmail, error: uErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    if (uErr) throw uErr;
+    // ✅ SOLUÇÃO DEFINITIVA: buscar UID no auth.users (sem getUserByEmail)
+    const { data: authUser, error: authErr } = await supabaseAdmin
+      .schema("auth")
+      .from("users")
+      .select("id,email")
+      .eq("email", email)
+      .maybeSingle();
 
-    const uid = userByEmail?.user?.id;
+    if (authErr) throw authErr;
+
+    const uid = authUser?.id;
     if (!uid) {
       console.log("[KIWIFY] auth_user_not_found_for_email", { email, eventRaw, orderStatus });
-      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email", email, event: eventRaw });
+      return res.status(200).json({
+        ok: true,
+        note: "auth_user_not_found_for_email",
+        email,
+        event: eventRaw,
+      });
     }
 
     const paidUntilISO = safeISO(paidUntilRaw) || (isApproved ? addDaysISO(31) : null);
-
     const statusBad = orderStatus === "past_due" || ev.includes("past_due") || ev.includes("atras");
 
     const patch = isApproved
