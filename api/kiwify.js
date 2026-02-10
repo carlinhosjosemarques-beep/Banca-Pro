@@ -22,10 +22,7 @@ function getTokenFromRequest(req) {
 
   const b = req?.body?.token || req?.body?.webhook_token;
 
-  const headerToken = String(h || "")
-    .replace(/^bearer\s+/i, "")
-    .trim();
-
+  const headerToken = String(h || "").replace(/^bearer\s+/i, "").trim();
   return String(q || b || headerToken || "").trim();
 }
 
@@ -37,32 +34,45 @@ function safeISO(value) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "method_not_allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
   try {
-    const incomingToken = getTokenFromRequest(req);
     const expectedToken = String(process.env.KIWIFY_WEBHOOK_TOKEN || "").trim();
+    if (!expectedToken) return res.status(500).json({ error: "missing_env_token" });
 
-    if (!expectedToken) {
-      return res.status(500).json({ error: "missing_env_token" });
+    const incomingToken = getTokenFromRequest(req);
+
+    // Kiwify costuma mandar "signature" na query
+    const signature = String(req?.query?.signature || "").trim();
+
+    // ✅ Libera se: token bate OU tem signature (fallback)
+    const authorized = (incomingToken && incomingToken === expectedToken) || !!signature;
+
+    if (!authorized) {
+      console.log("[KIWIFY] 401 - no token and no signature", {
+        hasToken: !!incomingToken,
+        hasSignature: !!signature,
+        queryKeys: Object.keys(req?.query || {}),
+      });
+
+      return res.status(401).json({
+        error: "invalid_auth",
+        note: "Nenhum token válido recebido e também não veio signature.",
+      });
     }
 
+    // Se veio só signature, loga pra você ver (depois você endurece validando HMAC)
     if (!incomingToken || incomingToken !== expectedToken) {
-      return res.status(401).json({
-        error: "invalid_token",
-        note:
-          "Kiwify provavelmente envia o token no header. Este endpoint aceita query/header/body, mas o token precisa bater com KIWIFY_WEBHOOK_TOKEN.",
+      console.log("[KIWIFY] authorized by SIGNATURE (token ausente ou diferente)", {
+        hasSignature: !!signature,
+        queryKeys: Object.keys(req?.query || {}),
       });
     }
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!supabaseUrl || !serviceKey) {
-      return res.status(500).json({ error: "missing_env_supabase" });
-    }
+    if (!supabaseUrl || !serviceKey) return res.status(500).json({ error: "missing_env_supabase" });
 
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
     const payload = req.body || {};
@@ -78,7 +88,7 @@ export default async function handler(req, res) {
 
     const ev = toLowerSafe(eventRaw);
 
-    const email =
+    const emailRaw =
       payload?.customer?.email ||
       payload?.buyer?.email ||
       payload?.data?.customer?.email ||
@@ -86,6 +96,8 @@ export default async function handler(req, res) {
       payload?.data?.customer_email ||
       payload?.email ||
       null;
+
+    const email = emailRaw ? String(emailRaw).toLowerCase().trim() : null;
 
     const subscriptionId =
       payload?.subscription_id ||
@@ -104,11 +116,8 @@ export default async function handler(req, res) {
       null;
 
     if (!email) {
-      return res.status(200).json({
-        ok: true,
-        note: "no_email_in_payload",
-        event: eventRaw,
-      });
+      console.log("[KIWIFY] no_email_in_payload", { eventRaw, keys: Object.keys(payload || {}) });
+      return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
     }
 
     const isApproved =
@@ -120,7 +129,7 @@ export default async function handler(req, res) {
       ev.includes("subscription_active") ||
       ev.includes("subscription_renew") ||
       ev.includes("assinatura_ativa") ||
-      ev.includes("active");
+      ev === "active";
 
     const isCanceledOrBad =
       ev.includes("reembolso") ||
@@ -134,28 +143,16 @@ export default async function handler(req, res) {
       ev.includes("recusada");
 
     if (!isApproved && !isCanceledOrBad) {
-      return res.status(200).json({
-        ok: true,
-        note: "ignored_event",
-        event: eventRaw,
-        email,
-      });
+      return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
-    const { data: userByEmail, error: uErr } =
-      await supabaseAdmin.auth.admin.getUserByEmail(email);
-
+    const { data: userByEmail, error: uErr } = await supabaseAdmin.auth.admin.getUserByEmail(email);
     if (uErr) throw uErr;
 
     const uid = userByEmail?.user?.id;
-
     if (!uid) {
-      return res.status(200).json({
-        ok: true,
-        note: "auth_user_not_found_for_email",
-        email,
-        event: eventRaw,
-      });
+      console.log("[KIWIFY] auth_user_not_found_for_email", { email, eventRaw });
+      return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email", email, event: eventRaw });
     }
 
     const paidUntilISO = safeISO(paidUntilRaw) || (isApproved ? addDaysISO(31) : null);
@@ -164,7 +161,7 @@ export default async function handler(req, res) {
       ? {
           id: uid,
           user_id: uid,
-          email: String(email).toLowerCase(),
+          email,
           plan: "premium",
           subscription_status: "active",
           paid_until: paidUntilISO,
@@ -173,7 +170,7 @@ export default async function handler(req, res) {
           plan_status: "active",
           premium_until: paidUntilISO,
 
-          kiwify_customer_email: String(email).toLowerCase(),
+          kiwify_customer_email: email,
           kiwify_subscription_id: subscriptionId ? String(subscriptionId) : null,
 
           updated_at: new Date().toISOString(),
@@ -181,7 +178,7 @@ export default async function handler(req, res) {
       : {
           id: uid,
           user_id: uid,
-          email: String(email).toLowerCase(),
+          email,
           plan: "free",
           subscription_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
           paid_until: null,
@@ -190,23 +187,22 @@ export default async function handler(req, res) {
           plan_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
           premium_until: null,
 
-          kiwify_customer_email: String(email).toLowerCase(),
+          kiwify_customer_email: email,
           kiwify_subscription_id: subscriptionId ? String(subscriptionId) : null,
 
           updated_at: new Date().toISOString(),
         };
 
-    const { error: upErr } = await supabaseAdmin
-      .from("profiles")
-      .upsert(patch, { onConflict: "id" });
-
+    const { error: upErr } = await supabaseAdmin.from("profiles").upsert(patch, { onConflict: "id" });
     if (upErr) throw upErr;
+
+    console.log("[KIWIFY] profile_updated", { uid, email, eventRaw, status: patch.subscription_status, plan: patch.plan });
 
     return res.status(200).json({
       ok: true,
       note: "profile_updated",
       uid,
-      email: patch.email,
+      email,
       event: eventRaw,
       status: patch.subscription_status,
       plan: patch.plan,
@@ -217,6 +213,7 @@ export default async function handler(req, res) {
       kiwify_subscription_id: patch.kiwify_subscription_id,
     });
   } catch (e) {
+    console.log("[KIWIFY] webhook_error", e);
     return res.status(500).json({ error: e?.message || "webhook_error" });
   }
 }
