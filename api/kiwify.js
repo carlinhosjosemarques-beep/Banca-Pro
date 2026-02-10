@@ -42,10 +42,8 @@ export default async function handler(req, res) {
 
     const incomingToken = getTokenFromRequest(req);
 
-    // Kiwify costuma mandar "signature" na query
     const signature = String(req?.query?.signature || "").trim();
 
-    // ✅ Libera se: token bate OU tem signature (fallback)
     const authorized = (incomingToken && incomingToken === expectedToken) || !!signature;
 
     if (!authorized) {
@@ -61,7 +59,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Se veio só signature, loga pra você ver (depois você endurece validando HMAC)
     if (!incomingToken || incomingToken !== expectedToken) {
       console.log("[KIWIFY] authorized by SIGNATURE (token ausente ou diferente)", {
         hasSignature: !!signature,
@@ -78,6 +75,7 @@ export default async function handler(req, res) {
     const payload = req.body || {};
 
     const eventRaw =
+      payload?.webhook_event_type ||
       payload?.event ||
       payload?.type ||
       payload?.name ||
@@ -88,9 +86,14 @@ export default async function handler(req, res) {
 
     const ev = toLowerSafe(eventRaw);
 
+    const orderStatus = toLowerSafe(payload?.order_status);
+
     const emailRaw =
+      payload?.Customer?.email ||
+      payload?.Customer?.Email ||
       payload?.customer?.email ||
       payload?.buyer?.email ||
+      payload?.Buyer?.email ||
       payload?.data?.customer?.email ||
       payload?.data?.buyer?.email ||
       payload?.data?.customer_email ||
@@ -101,6 +104,8 @@ export default async function handler(req, res) {
 
     const subscriptionId =
       payload?.subscription_id ||
+      payload?.Subscription?.id ||
+      payload?.Subscription?.subscription_id ||
       payload?.data?.subscription_id ||
       payload?.data?.subscription?.id ||
       payload?.data?.id ||
@@ -113,14 +118,26 @@ export default async function handler(req, res) {
       payload?.premium_until ||
       payload?.data?.next_charge_at ||
       payload?.data?.next_billing_at ||
+      payload?.Subscription?.next_charge_at ||
+      payload?.Subscription?.next_billing_at ||
+      payload?.Subscription?.next_charge_date ||
       null;
 
     if (!email) {
-      console.log("[KIWIFY] no_email_in_payload", { eventRaw, keys: Object.keys(payload || {}) });
+      console.log("[KIWIFY] no_email_in_payload", {
+        eventRaw,
+        orderStatus,
+        keys: Object.keys(payload || {}),
+        hasCustomerObj: !!payload?.Customer,
+        customerKeys: payload?.Customer ? Object.keys(payload.Customer) : [],
+      });
       return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
     }
 
     const isApproved =
+      orderStatus === "paid" ||
+      orderStatus === "approved" ||
+      orderStatus === "completed" ||
       ev.includes("compra_aprov") ||
       ev.includes("approved") ||
       ev.includes("aprovada") ||
@@ -132,6 +149,13 @@ export default async function handler(req, res) {
       ev === "active";
 
     const isCanceledOrBad =
+      orderStatus === "refunded" ||
+      orderStatus === "chargeback" ||
+      orderStatus === "canceled" ||
+      orderStatus === "cancelled" ||
+      orderStatus === "failed" ||
+      orderStatus === "refused" ||
+      orderStatus === "declined" ||
       ev.includes("reembolso") ||
       ev.includes("refund") ||
       ev.includes("chargeback") ||
@@ -143,6 +167,7 @@ export default async function handler(req, res) {
       ev.includes("recusada");
 
     if (!isApproved && !isCanceledOrBad) {
+      console.log("[KIWIFY] ignored_event", { eventRaw, ev, orderStatus, email });
       return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
@@ -151,11 +176,13 @@ export default async function handler(req, res) {
 
     const uid = userByEmail?.user?.id;
     if (!uid) {
-      console.log("[KIWIFY] auth_user_not_found_for_email", { email, eventRaw });
+      console.log("[KIWIFY] auth_user_not_found_for_email", { email, eventRaw, orderStatus });
       return res.status(200).json({ ok: true, note: "auth_user_not_found_for_email", email, event: eventRaw });
     }
 
     const paidUntilISO = safeISO(paidUntilRaw) || (isApproved ? addDaysISO(31) : null);
+
+    const statusBad = orderStatus === "past_due" || ev.includes("past_due") || ev.includes("atras");
 
     const patch = isApproved
       ? {
@@ -180,11 +207,11 @@ export default async function handler(req, res) {
           user_id: uid,
           email,
           plan: "free",
-          subscription_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
+          subscription_status: statusBad ? "past_due" : "inactive",
           paid_until: null,
 
           is_premium: false,
-          plan_status: ev.includes("past_due") || ev.includes("atras") ? "past_due" : "inactive",
+          plan_status: statusBad ? "past_due" : "inactive",
           premium_until: null,
 
           kiwify_customer_email: email,
@@ -196,7 +223,16 @@ export default async function handler(req, res) {
     const { error: upErr } = await supabaseAdmin.from("profiles").upsert(patch, { onConflict: "id" });
     if (upErr) throw upErr;
 
-    console.log("[KIWIFY] profile_updated", { uid, email, eventRaw, status: patch.subscription_status, plan: patch.plan });
+    console.log("[KIWIFY] profile_updated", {
+      uid,
+      email,
+      eventRaw,
+      ev,
+      orderStatus,
+      status: patch.subscription_status,
+      plan: patch.plan,
+      paid_until: patch.paid_until,
+    });
 
     return res.status(200).json({
       ok: true,
