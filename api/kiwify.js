@@ -58,13 +58,6 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!incomingToken || incomingToken !== expectedToken) {
-      console.log("[KIWIFY] authorized by SIGNATURE (token ausente/diferente)", {
-        hasSignature: !!signature,
-        queryKeys: Object.keys(req?.query || {}),
-      });
-    }
-
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -76,7 +69,6 @@ export default async function handler(req, res) {
 
     const payload = req.body || {};
 
-    // ✅ Kiwify pode mandar isso assim (teu log mostrou webhook_event_type e order_status)
     const eventRaw =
       payload?.webhook_event_type ||
       payload?.event ||
@@ -90,7 +82,6 @@ export default async function handler(req, res) {
     const ev = toLowerSafe(eventRaw);
     const orderStatus = toLowerSafe(payload?.order_status);
 
-    // ✅ Seu log mostrou: "Customer" com C maiúsculo
     const emailRaw =
       payload?.Customer?.email ||
       payload?.Customer?.Email ||
@@ -137,7 +128,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, note: "no_email_in_payload", event: eventRaw });
     }
 
-    // ✅ Aprovação / cancelamento usando event + order_status
     const isApproved =
       orderStatus === "paid" ||
       orderStatus === "approved" ||
@@ -175,22 +165,21 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, note: "ignored_event", event: eventRaw, email });
     }
 
-    // ✅ SOLUÇÃO DEFINITIVA: buscar UID no auth.users (sem getUserByEmail)
-    const { data: authUser, error: authErr } = await supabaseAdmin
-      .schema("auth")
-      .from("users")
+    // ✅ SOLUÇÃO DEFINITIVA: pegar uid pelo profiles (public) via email
+    const { data: prof, error: profErr } = await supabaseAdmin
+      .from("profiles")
       .select("id,email")
-      .eq("email", email)
+      .ilike("email", email)
       .maybeSingle();
 
-    if (authErr) throw authErr;
+    if (profErr) throw profErr;
 
-    const uid = authUser?.id;
+    const uid = prof?.id;
     if (!uid) {
-      console.log("[KIWIFY] auth_user_not_found_for_email", { email, eventRaw, orderStatus });
+      console.log("[KIWIFY] profile_not_found_for_email", { email, eventRaw, orderStatus });
       return res.status(200).json({
         ok: true,
-        note: "auth_user_not_found_for_email",
+        note: "profile_not_found_for_email",
         email,
         event: eventRaw,
       });
