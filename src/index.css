@@ -22,7 +22,6 @@ html, body, #root { height: 100%; }
   --pageBase: rgb(8, 12, 18);
   --pageBase2: rgb(8, 12, 18);
 
-  /* ✅ cores do select (por tema) */
   --selectBg: rgb(12, 16, 24);
   --selectText: rgba(255,255,255,.92);
 }
@@ -63,7 +62,6 @@ body{
   color: var(--text);
 }
 
-/* root sempre sem “vazar” */
 #root{
   background: transparent;
   min-height: 100%;
@@ -76,6 +74,19 @@ body{
 }
 @media (max-width: 720px){
   .container{ padding-bottom: 88px; }
+}
+
+/* ====== GRID (12 col) ====== */
+.grid{
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px){
+  .grid{ grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 520px){
+  .grid{ grid-template-columns: 1fr; }
 }
 
 /* ====== CARD ====== */
@@ -92,6 +103,8 @@ body{
 h1,h2,h3{ margin: 0; color: var(--text); }
 .muted{ color: var(--muted); }
 .hr{ height: 1px; background: var(--line); margin: 14px 0; }
+
+.row{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
 /* ====== TOPBAR / NAV ====== */
 .topbar{
@@ -125,6 +138,11 @@ h1,h2,h3{ margin: 0; color: var(--text); }
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.hideOnMobile{ display: inline; }
+@media (max-width: 720px){
+  .hideOnMobile{ display: none; }
 }
 
 /* ====== LOGO ====== */
@@ -167,10 +185,8 @@ html[data-theme="light"] .logo{
   outline: none;
 }
 
-/* ✅ placeholder respeita tema */
 .input::placeholder{ color: color-mix(in srgb, var(--text) 45%, transparent); }
 
-/* ✅ select e option respeitam tema */
 select, option{
   background: var(--selectBg);
   color: var(--selectText);
@@ -240,8 +256,6 @@ select, option{
   padding: 12px;
   border-top: 1px solid var(--line);
 }
-
-.row{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
 /* ====== TABS ====== */
 .tab{
@@ -330,55 +344,45 @@ html[data-theme="light"] .mobilebar{
   background: rgba(255,255,255,.02);
   overflow: hidden;
 }
+
 /* =========================
-   FIX: FORM LAYOUT (evita sobreposição)
+   FIX: FORM LAYOUT
    ========================= */
+*, *::before, *::after { box-sizing: border-box; }
 
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+input, select, textarea, button { max-width: 100%; }
 
-input, select, textarea, button {
-  max-width: 100%;
-}
-
-/* Linha de formulário: cada item vira "coluna" com quebra automática */
-.formRow {
+.formRow{
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   align-items: end;
 }
 
-/* Cada campo dentro da linha */
-.formRow .field {
+.formRow .field{
   flex: 1 1 180px;
   min-width: 160px;
 }
 
-/* Campo que precisa ser maior (ex: Observação) */
-.formRow .field.grow {
+.formRow .field.grow{
   flex: 3 1 320px;
   min-width: 240px;
 }
 
-/* Botão na linha não deve esticar */
-.formRow .actions {
+.formRow .actions{
   flex: 0 0 auto;
   align-self: end;
 }
 
-/* Inputs e selects dentro dos campos ocupam todo o campo, sem vazar */
 .field .input,
 .field .select,
 .field input,
 .field select,
-.field textarea {
+.field textarea{
   width: 100%;
 }
 
-/* Grid para formulários maiores (Metas) */
-.formGrid {
+.formGrid{
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -397,7 +401,6 @@ input, select, textarea, button {
 .col-11 { grid-column: span 11; }
 .col-12 { grid-column: span 12; }
 
-/* Responsivo: no mobile vira 1 coluna */
 @media (max-width: 900px) {
   .formGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .col-7, .col-8, .col-9, .col-10, .col-11, .col-12 { grid-column: span 6; }
@@ -407,5 +410,61 @@ input, select, textarea, button {
   .col-2, .col-3, .col-4, .col-5, .col-6,
   .col-7, .col-8, .col-9, .col-10, .col-11, .col-12 { grid-column: span 1; }
 }
+
 .field { min-width: 0; }
 .label { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+
+/* ====== METAS (details) ====== */
+details.meta{
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,.03);
+  overflow: hidden;
+}
+details.meta > summary{
+  list-style: none;
+  cursor: pointer;
+  padding: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+details.meta > summary::-webkit-details-marker{ display: none; }
+
+.metaTitle{
+  font-weight: 900;
+  letter-spacing: -0.2px;
+}
+.metaSub{
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* evita estouro de flex por min-width herdado */
+.row > * { min-width: 0; }
+
+/* botões e badges podem quebrar sem estourar */
+.btn, .badge, .tab { max-width: 100%; }
+
+/* inputs nativos (month/week/date) costumam estourar em alguns Android */
+input[type="month"],
+input[type="week"],
+input[type="date"]{
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* tabelas: sempre seguras dentro de card */
+.tableWrap{
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table{ min-width: 520px; } /* ajusta o “padrão” pro mobile */
+
+/* se quiser, no celular reduz a largura mínima */
+@media (max-width: 520px){
+  .table{ min-width: 480px; }
+}

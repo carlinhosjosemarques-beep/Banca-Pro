@@ -8,36 +8,86 @@ export default function Perfil({ user, onLogout }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
+  const [profileKey, setProfileKey] = useState(null);
+
+  async function fetchProfileSafe(uid, email) {
+    const cols = "id,user_id,email,display_name";
+
+    let r = await supabase.from("profiles").select(cols).eq("id", uid).maybeSingle();
+    if (r.error) throw r.error;
+    if (r.data) return { data: r.data, key: { by: "id", value: uid } };
+
+    let r2 = await supabase.from("profiles").select(cols).eq("user_id", uid).maybeSingle();
+    if (r2.error) throw r2.error;
+    if (r2.data) return { data: r2.data, key: { by: "user_id", value: uid } };
+
+    if (email) {
+      let r3 = await supabase.from("profiles").select(cols).eq("email", email).maybeSingle();
+      if (r3.error) throw r3.error;
+      if (r3.data) return { data: r3.data, key: { by: "email", value: email } };
+    }
+
+    return { data: null, key: null };
+  }
+
+  async function ensureProfile(uid, email) {
+    const found = await fetchProfileSafe(uid, email);
+    if (found.data) return found;
+
+    const payload = { id: uid, user_id: uid, email: email || null, display_name: "" };
+    let ins = await supabase.from("profiles").insert(payload).select("id,user_id,email,display_name").single();
+
+    if (ins.error) {
+      const payload2 = { user_id: uid, email: email || null, display_name: "" };
+      let ins2 = await supabase.from("profiles").insert(payload2).select("id,user_id,email,display_name").single();
+      if (ins2.error) throw ins2.error;
+      return { data: ins2.data, key: { by: "id", value: ins2.data.id } };
+    }
+
+    return { data: ins.data, key: { by: "id", value: uid } };
+  }
+
   useEffect(() => {
     async function load() {
       setLoading(true);
       setMsg("");
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!data && !error) {
-        await supabase.from("profiles").insert({ user_id: user.id, display_name: "" });
-        setDisplayName("");
-      } else {
+      try {
+        const { data, key } = await ensureProfile(user.id, user.email);
         setDisplayName(data?.display_name || "");
+        setProfileKey(key || { by: "id", value: user.id });
+      } catch (e) {
+        setMsg(e?.message || "Erro ao carregar perfil");
+        setProfileKey({ by: "id", value: user.id });
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
-  }, [user.id]);
+  }, [user.id, user.email]);
 
   async function saveName() {
     setSaving(true);
     setMsg("");
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ display_name: (displayName || "").trim() })
-        .eq("user_id", user.id);
-      if (error) throw error;
+      const name = (displayName || "").trim();
+
+      if (profileKey?.by === "user_id") {
+        const { error } = await supabase.from("profiles").update({ display_name: name }).eq("user_id", user.id);
+        if (error) throw error;
+      } else if (profileKey?.by === "email") {
+        const { error } = await supabase.from("profiles").update({ display_name: name }).eq("email", user.email);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("profiles").update({ display_name: name }).eq("id", user.id);
+        if (error) {
+          const { error: e2 } = await supabase.from("profiles").update({ display_name: name }).eq("user_id", user.id);
+          if (e2) throw e2;
+          setProfileKey({ by: "user_id", value: user.id });
+        } else {
+          setProfileKey({ by: "id", value: user.id });
+        }
+      }
+
       setMsg("Nome salvo ✅");
     } catch (e) {
       setMsg(e?.message || "Erro ao salvar");

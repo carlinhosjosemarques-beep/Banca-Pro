@@ -36,7 +36,14 @@ function openCheckout() {
 
 function LogoMark() {
   return (
-    <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+    <svg
+      width="34"
+      height="34"
+      viewBox="0 0 64 64"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
       <defs>
         <linearGradient id="bp_g1" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
           <stop stopColor="#7C3AED" />
@@ -113,11 +120,8 @@ function computeIsPremium(p) {
 
   const isPremiumFlag = p?.is_premium === true;
 
-  const activeByStatus =
-    sub === "active" || planStatus === "active" || sub === "approved" || sub === "paid";
-
-  const premiumByPlan =
-    plan === "premium" || plan === "pro" || plan === "paid";
+  const activeByStatus = sub === "active" || planStatus === "active" || sub === "approved" || sub === "paid";
+  const premiumByPlan = plan === "premium" || plan === "pro" || plan === "paid";
 
   return activeByStatus || premiumByPlan || isPremiumFlag || hasValidUntil;
 }
@@ -164,22 +168,18 @@ export default function App() {
     setLoadingProfile(true);
 
     try {
-      const baseSelect =
-        "display_name,plan,subscription_status,paid_until,plan_status,is_premium,premium_until";
+      const baseSelect = "display_name,plan,subscription_status,paid_until,plan_status,is_premium,premium_until";
 
-      // 1) padrão: id = auth.uid
       let r = await supabase.from("profiles").select(baseSelect).eq("id", uid).maybeSingle();
       let data = r.data;
       let error = r.error;
 
-      // 2) fallback: user_id = auth.uid
       if (!data && !error) {
         const r2 = await supabase.from("profiles").select(baseSelect).eq("user_id", uid).maybeSingle();
         data = r2.data;
         error = r2.error;
       }
 
-      // 3) fallback: email (muito comum no webhook atualizar por email)
       if (!data && !error && email) {
         const r3 = await supabase.from("profiles").select(baseSelect).eq("email", email).maybeSingle();
         data = r3.data;
@@ -275,7 +275,6 @@ export default function App() {
 
     await fetchProfile(user.id, user.email);
 
-    // opcional: tenta por 60s (webhook pode demorar)
     if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
 
     const start = Date.now();
@@ -317,19 +316,27 @@ export default function App() {
       <div>
         <div className="container" style={{ paddingTop: 24 }}>
           <div className="topbar" style={{ marginBottom: 18 }}>
-            <div className="brand">
-              <div className="logo" aria-hidden="true">
+            <div
+              className="brand"
+              style={{
+                minWidth: 0,
+                flex: 1,
+                gap: 12,
+                alignItems: "center",
+              }}
+            >
+              <div className="logo" aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 18 }}>
                 <LogoMark />
               </div>
-              <div>
-                <h1>Banca Pro</h1>
-                <p>
+              <div style={{ minWidth: 0 }}>
+                <h1 style={{ fontSize: isMobile ? 26 : 34, lineHeight: 1.05, margin: 0 }}>Banca Pro</h1>
+                <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 13, lineHeight: 1.25, wordBreak: "break-word" }}>
                   {saudacao} • {user.email}
                 </p>
               </div>
             </div>
 
-            <div className="nav">
+            <div className="nav" style={{ justifyContent: "flex-end" }}>
               <button
                 className="btn"
                 type="button"
@@ -382,8 +389,7 @@ export default function App() {
             </span>
             {paidUntil || premiumUntil ? (
               <span className="badge">
-                Válido até:{" "}
-                <b>{new Date(paidUntil || premiumUntil).toLocaleDateString("pt-BR")}</b>
+                Válido até: <b>{new Date(paidUntil || premiumUntil).toLocaleDateString("pt-BR")}</b>
               </span>
             ) : null}
           </div>
@@ -398,70 +404,121 @@ export default function App() {
 
   return (
     <div>
+      {/* TOPBAR (ajustada pro mobile não cortar) */}
       <div className="container">
-        <div className="topbar">
-          <div className="brand">
-            <div className="logo" aria-hidden="true">
+        <div className="topbar" style={{ flexWrap: "wrap" }}>
+          <div
+            className="brand"
+            style={{
+              minWidth: 0,
+              flex: 1,
+              gap: 12,
+              alignItems: "center",
+            }}
+          >
+            <div className="logo" aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 18 }}>
               <LogoMark />
             </div>
-            <div>
-              <h1>Banca Pro</h1>
-              <p>
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ fontSize: isMobile ? 26 : 34, lineHeight: 1.05, margin: 0 }}>Banca Pro</h1>
+              <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 13, lineHeight: 1.25, wordBreak: "break-word" }}>
                 {saudacao} • {user.email}
               </p>
             </div>
           </div>
 
-          <div className="nav">
-            <button className={"tab " + (tab === "dashboard" ? "active" : "")} type="button" onClick={() => setTab("dashboard")}>
-              Dashboard
-            </button>
-            <button className={"tab " + (tab === "lancamentos" ? "active" : "")} type="button" onClick={() => setTab("lancamentos")}>
-              Lançamentos
-            </button>
-            <button className={"tab " + (tab === "relatorios" ? "active" : "")} type="button" onClick={() => setTab("relatorios")}>
-              Relatórios
-            </button>
-            <button className={"tab " + (tab === "metas" ? "active" : "")} type="button" onClick={() => setTab("metas")}>
-              Metas
-            </button>
+          {/* NAV DESKTOP: tabs em cima (no mobile some, fica só mobilebar) */}
+          {!isMobile ? (
+            <div className="nav">
+              <button className={"tab " + (tab === "dashboard" ? "active" : "")} type="button" onClick={() => setTab("dashboard")}>
+                Dashboard
+              </button>
+              <button className={"tab " + (tab === "lancamentos" ? "active" : "")} type="button" onClick={() => setTab("lancamentos")}>
+                Lançamentos
+              </button>
+              <button className={"tab " + (tab === "relatorios" ? "active" : "")} type="button" onClick={() => setTab("relatorios")}>
+                Relatórios
+              </button>
+              <button className={"tab " + (tab === "metas" ? "active" : "")} type="button" onClick={() => setTab("metas")}>
+                Metas
+              </button>
 
-            <button
-              className="btn"
-              type="button"
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              title={themeLabel}
-              aria-label={themeLabel}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <ThemeIcon />
-              <span>{themeLabel}</span>
-            </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                title={themeLabel}
+                aria-label={themeLabel}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <ThemeIcon />
+                <span>{themeLabel}</span>
+              </button>
 
-            <button
-              className={"btn " + (tab === "perfil" ? "primary" : "")}
-              type="button"
-              onClick={() => setTab("perfil")}
-              title="Perfil"
-              aria-label="Perfil"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <IconUser />
-              <span className="hideOnMobile">Perfil</span>
-            </button>
+              <button
+                className={"btn " + (tab === "perfil" ? "primary" : "")}
+                type="button"
+                onClick={() => setTab("perfil")}
+                title="Perfil"
+                aria-label="Perfil"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <IconUser />
+                <span>Perfil</span>
+              </button>
 
-            <button
-              className="btn danger"
-              type="button"
-              onClick={sair}
-              title="Sair"
-              aria-label="Sair"
-              style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              <IconLogout />
-              <span className="hideOnMobile">Sair</span>
-            </button>
-          </div>
+              <button
+                className="btn danger"
+                type="button"
+                onClick={sair}
+                title="Sair"
+                aria-label="Sair"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <IconLogout />
+                <span>Sair</span>
+              </button>
+            </div>
+          ) : (
+            /* NAV MOBILE: só 3 botões compactos */
+            <div className="nav" style={{ width: "100%", justifyContent: "flex-end" }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                title={themeLabel}
+                aria-label={themeLabel}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <ThemeIcon />
+                <span style={{ whiteSpace: "nowrap" }}>{themeLabel}</span>
+              </button>
+
+              <button
+                className={"btn " + (tab === "perfil" ? "primary" : "")}
+                type="button"
+                onClick={() => setTab("perfil")}
+                title="Perfil"
+                aria-label="Perfil"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <IconUser />
+                <span style={{ whiteSpace: "nowrap" }}>Perfil</span>
+              </button>
+
+              <button
+                className="btn danger"
+                type="button"
+                onClick={sair}
+                title="Sair"
+                aria-label="Sair"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                <IconLogout />
+                <span style={{ whiteSpace: "nowrap" }}>Sair</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -471,6 +528,7 @@ export default function App() {
       {tab === "metas" ? <Metas user={user} /> : null}
       {tab === "perfil" ? <Perfil user={user} onLogout={sair} /> : null}
 
+      {/* MOBILE BAR (principal navegação no celular) */}
       {isMobile ? (
         <div className="mobilebar">
           <button className={"mitem " + (tab === "dashboard" ? "active" : "")} type="button" onClick={() => setTab("dashboard")}>

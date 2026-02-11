@@ -38,7 +38,7 @@ export default function Lancamentos({ user }) {
   const [valor, setValor] = useState("");
   const [obs, setObs] = useState("");
 
-  const [filtro, setFiltro] = useState("mes"); // hoje | semana | mes | intervalo
+  const [filtro, setFiltro] = useState("mes");
   const [ini, setIni] = useState(() => ymd(new Date()));
   const [fim, setFim] = useState(() => ymd(new Date()));
 
@@ -301,55 +301,57 @@ export default function Lancamentos({ user }) {
           <h2>Lançamentos do período</h2>
           {loading ? <div className="muted">Carregando...</div> : null}
 
-          <table className="table" style={{ marginTop: 10 }}>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Tipo</th>
-                <th>Valor</th>
-                <th>Obs</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const d = parseYMDLocal(r.data);
-                const isPos = r.tipo === "green" || r.tipo === "deposito";
-                return (
-                  <tr key={r.id}>
-                    <td className="muted">{d ? d.toLocaleDateString("pt-BR") : r.data}</td>
-                    <td>
-                      <span className="badge">
-                        <span className={"dot " + (r.tipo === "green" ? "ok" : r.tipo === "loss" ? "danger" : "")} />
-                        {typeLabel(r.tipo)}
-                      </span>
-                    </td>
-                    <td style={{ fontWeight: 800 }}>{isPos ? money(r.valor) : `-${money(r.valor)}`}</td>
-                    <td className="muted" style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {r.obs || "-"}
-                    </td>
-                    <td>
-                      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                        <button className="btn" type="button" onClick={() => editPrompt(r)}>
-                          Editar
-                        </button>
-                        <button className="btn danger" type="button" onClick={() => del(r.id)}>
-                          Excluir
-                        </button>
-                      </div>
+          <div className="tableWrap" style={{ marginTop: 10 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Tipo</th>
+                  <th>Valor</th>
+                  <th>Obs</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const d = parseYMDLocal(r.data);
+                  const isPos = r.tipo === "green" || r.tipo === "deposito";
+                  return (
+                    <tr key={r.id}>
+                      <td className="muted">{d ? d.toLocaleDateString("pt-BR") : r.data}</td>
+                      <td>
+                        <span className="badge">
+                          <span className={"dot " + (r.tipo === "green" ? "ok" : r.tipo === "loss" ? "danger" : "")} />
+                          {typeLabel(r.tipo)}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 800 }}>{isPos ? money(r.valor) : `-${money(r.valor)}`}</td>
+                      <td className="muted" style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.obs || "-"}
+                      </td>
+                      <td>
+                        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          <button className="btn" type="button" onClick={() => editPrompt(r)}>
+                            Editar
+                          </button>
+                          <button className="btn danger" type="button" onClick={() => del(r.id)}>
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!rows.length && !loading ? (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Sem lançamentos nesse período.
                     </td>
                   </tr>
-                );
-              })}
-              {!rows.length && !loading ? (
-                <tr>
-                  <td colSpan={5} className="muted">
-                    Sem lançamentos nesse período.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

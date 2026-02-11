@@ -520,7 +520,6 @@ export default function Metas({ user }) {
       setErr(e?.message || "Erro ao editar meta");
     }
   }
-
   return (
     <div className="container">
       <div className="card">
@@ -745,7 +744,7 @@ export default function Metas({ user }) {
                     openMeta(m);
                   }}
                 >
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="metaTitle">{m.titulo}</div>
                     <div className="metaSub">
                       {fmtDateBR(m.start_date)} → {fmtDateBR(m.end_date)} •{" "}
@@ -762,37 +761,40 @@ export default function Metas({ user }) {
                     </div>
                   </div>
 
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      startEditMeta(m);
-                    }}
-                  >
-                    Editar meta
-                  </button>
+                  <div className="row" style={{ justifyContent: "flex-end" }}>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEditMeta(m);
+                      }}
+                    >
+                      Editar meta
+                    </button>
 
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleActive(m);
-                    }}
-                  >
-                    {m.ativo ? "Pausar" : "Ativar"}
-                  </button>
-                  <button
-                    className="btn danger"
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteMeta(m);
-                    }}
-                  >
-                    Excluir
-                  </button>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleActive(m);
+                      }}
+                    >
+                      {m.ativo ? "Pausar" : "Ativar"}
+                    </button>
+
+                    <button
+                      className="btn danger"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMeta(m);
+                      }}
+                    >
+                      Excluir
+                    </button>
+                  </div>
                 </summary>
 
                 {openMetaId === m.id ? (
@@ -1032,135 +1034,148 @@ export default function Metas({ user }) {
                       </div>
                     ) : null}
 
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Dia</th>
-                          <th>Banca (após o dia)</th>
-                          <th>Real</th>
-                          <th>Status</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {metaDays.map((d) => {
-                          const isGreen = d.status === "green";
-                          const isLoss = d.status === "loss";
-                          const rowStyle = isGreen
-                            ? { background: "rgba(0,255,140,.06)" }
-                            : isLoss
-                            ? { background: "rgba(255,70,70,.06)" }
-                            : null;
+                    <div className="tableWrap" style={{ marginTop: 10 }}>
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Dia</th>
+                            <th>Banca (após o dia)</th>
+                            <th>Real</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metaDays.map((d) => {
+                            const isGreen = d.status === "green";
+                            const isLoss = d.status === "loss";
+                            const rowStyle = isGreen
+                              ? { background: "rgba(0,255,140,.06)" }
+                              : isLoss
+                              ? { background: "rgba(255,70,70,.06)" }
+                              : null;
 
-                          const bancaDia = getBancaRow(d.id);
+                            const bancaDia = getBancaRow(d.id);
 
-                          return (
-                            <tr key={d.id} style={rowStyle || undefined}>
-                              <td className="muted">{fmtDateBR(d.day)}</td>
-                              <td style={{ fontWeight: 800 }}>
-                                {bancaDia === null ? "—" : money(bancaDia)}
-                              </td>
-                              <td>
-                                {d.actual === null || d.actual === undefined
-                                  ? "—"
-                                  : money(d.actual)}
-                              </td>
-                              <td
-                                className="muted"
-                                style={{
-                                  color: isGreen
-                                    ? "#7CFFB2"
-                                    : isLoss
-                                    ? "#FF8A8A"
-                                    : undefined,
-                                  fontWeight: 700,
-                                }}
-                              >
-                                {d.status}
-                              </td>
-                              <td>
-                                <div
-                                  className="row"
-                                  style={{ gap: 10, flexWrap: "wrap" }}
+                            return (
+                              <tr key={d.id} style={rowStyle || undefined}>
+                                <td className="muted">{fmtDateBR(d.day)}</td>
+                                <td style={{ fontWeight: 800 }}>
+                                  {bancaDia === null ? "—" : money(bancaDia)}
+                                </td>
+                                <td>
+                                  {d.actual === null || d.actual === undefined
+                                    ? "—"
+                                    : money(d.actual)}
+                                </td>
+                                <td
+                                  className="muted"
+                                  style={{
+                                    color: isGreen
+                                      ? "#7CFFB2"
+                                      : isLoss
+                                      ? "#FF8A8A"
+                                      : undefined,
+                                    fontWeight: 700,
+                                  }}
                                 >
-                                  <button
-                                    className="btn"
-                                    type="button"
-                                    onClick={() => beginInput(d, "green")}
+                                  {d.status}
+                                </td>
+                                <td>
+                                  <div
+                                    className="row"
+                                    style={{
+                                      gap: 10,
+                                      flexWrap: "wrap",
+                                      alignItems: "center",
+                                      maxWidth: 520,
+                                    }}
                                   >
-                                    Green
-                                  </button>
-                                  <button
-                                    className="btn danger"
-                                    type="button"
-                                    onClick={() => beginInput(d, "loss")}
-                                  >
-                                    Loss
-                                  </button>
-
-                                  <button
-                                    className="btn"
-                                    type="button"
-                                    onClick={() => beginEditValue(d)}
-                                  >
-                                    Editar valor
-                                  </button>
-
-                                  {editingRowId === d.id ? (
-                                    <div
-                                      className="formRow"
-                                      style={{ marginTop: 6 }}
+                                    <button
+                                      className="btn"
+                                      type="button"
+                                      onClick={() => beginInput(d, "green")}
                                     >
-                                      <div className="field">
-                                        <input
-                                          className="input"
-                                          value={editingValue}
-                                          onChange={(e) =>
-                                            setEditingValue(e.target.value)
-                                          }
-                                          inputMode="decimal"
-                                          placeholder={
-                                            editingStatus === "loss"
-                                              ? "Valor (vira negativo)"
-                                              : "Valor"
-                                          }
-                                        />
-                                      </div>
-                                      <div className="actions">
-                                        <button
-                                          className="btn primary"
-                                          type="button"
-                                          onClick={() => submitValue(d)}
+                                      Green
+                                    </button>
+                                    <button
+                                      className="btn danger"
+                                      type="button"
+                                      onClick={() => beginInput(d, "loss")}
+                                    >
+                                      Loss
+                                    </button>
+
+                                    <button
+                                      className="btn"
+                                      type="button"
+                                      onClick={() => beginEditValue(d)}
+                                    >
+                                      Editar valor
+                                    </button>
+
+                                    {editingRowId === d.id ? (
+                                      <div
+                                        className="formRow"
+                                        style={{ marginTop: 6, width: "100%" }}
+                                      >
+                                        <div className="field">
+                                          <input
+                                            className="input"
+                                            value={editingValue}
+                                            onChange={(e) =>
+                                              setEditingValue(e.target.value)
+                                            }
+                                            inputMode="decimal"
+                                            placeholder={
+                                              editingStatus === "loss"
+                                                ? "Valor (vira negativo)"
+                                                : "Valor"
+                                            }
+                                          />
+                                        </div>
+                                        <div
+                                          className="actions"
+                                          style={{ flex: "0 0 auto" }}
                                         >
-                                          OK
-                                        </button>
-                                      </div>
-                                      <div className="actions">
-                                        <button
-                                          className="btn"
-                                          type="button"
-                                          onClick={cancelInput}
+                                          <button
+                                            className="btn primary"
+                                            type="button"
+                                            onClick={() => submitValue(d)}
+                                          >
+                                            OK
+                                          </button>
+                                        </div>
+                                        <div
+                                          className="actions"
+                                          style={{ flex: "0 0 auto" }}
                                         >
-                                          Cancelar
-                                        </button>
+                                          <button
+                                            className="btn"
+                                            type="button"
+                                            onClick={cancelInput}
+                                          >
+                                            Cancelar
+                                          </button>
+                                        </div>
                                       </div>
-                                    </div>
-                                  ) : null}
-                                </div>
+                                    ) : null}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                          {!metaDays.length && !loadingDays ? (
+                            <tr>
+                              <td colSpan={5} className="muted">
+                                Sem dias para esta meta.
                               </td>
                             </tr>
-                          );
-                        })}
-
-                        {!metaDays.length && !loadingDays ? (
-                          <tr>
-                            <td colSpan={5} className="muted">
-                              Sem dias para esta meta.
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : null}
               </details>

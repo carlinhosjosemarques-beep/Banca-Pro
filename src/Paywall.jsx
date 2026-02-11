@@ -9,32 +9,40 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl, on
     return "Seu acesso ainda não está ativo. Assine para liberar o Banca Pro.";
   }, [status]);
 
+  function open() {
+    if (onCheckout) return onCheckout();
+    if (!checkoutUrl || checkoutUrl === "#") return alert("Checkout não configurado.");
+    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div className="container" style={{ maxWidth: 980 }}>
       <div className="card" style={{ padding: 18 }}>
-        <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
+        <div className="row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ minWidth: 260 }}>
             <div className="muted" style={{ fontSize: 13 }}>
               {displayName ? `Olá, ${displayName} 👋` : "Olá 👋"}
             </div>
             <h2 style={{ marginTop: 6 }}>Acesso bloqueado</h2>
-            <div className="muted" style={{ marginTop: 6 }}>{msg}</div>
+            <div className="muted" style={{ marginTop: 6, lineHeight: 1.5 }}>{msg}</div>
           </div>
 
-          <div className="row" style={{ gap: 10, alignItems: "center" }}>
+          <div className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span className="badge">
               Status: <b style={{ textTransform: "uppercase" }}>{status || "inactive"}</b>
             </span>
-            <button className="btn" type="button" onClick={onLogout}>Sair</button>
+            <button className="btn danger" type="button" onClick={onLogout}>
+              Sair
+            </button>
           </div>
         </div>
 
         <div className="hr" />
 
-        <div className="row" style={{ gap: 14, flexWrap: "wrap" }}>
-          <div className="card" style={{ flex: 1, minWidth: 260, background: "rgba(255,255,255,.03)" }}>
-            <h2 style={{ fontSize: 16 }}>O que você desbloqueia</h2>
-            <ul className="muted" style={{ marginTop: 10, lineHeight: 1.6 }}>
+        <div className="kpis">
+          <div className="kpi">
+            <div className="kpiTitle">O que você desbloqueia</div>
+            <ul className="muted" style={{ marginTop: 10, lineHeight: 1.7, paddingLeft: 18 }}>
               <li>Lançamentos: green, loss, depósito, saque</li>
               <li>Relatórios por mês, semana e intervalo</li>
               <li>Metas com cálculo automático e banca por dia</li>
@@ -42,16 +50,17 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl, on
             </ul>
           </div>
 
-          <div className="card" style={{ flex: 1, minWidth: 260, background: "rgba(255,255,255,.03)" }}>
-            <h2 style={{ fontSize: 16 }}>Plano Banca Pro</h2>
-            <div className="muted" style={{ marginTop: 10, lineHeight: 1.7 }}>
+          <div className="kpi">
+            <div className="kpiTitle">Plano Banca Pro</div>
+
+            <div className="muted" style={{ marginTop: 10, lineHeight: 1.75 }}>
               <div><b>R$ 24,99</b> (adesão inicial)</div>
               <div><b>R$ 10,99/mês</b> (assinatura)</div>
               <div style={{ marginTop: 10 }}>Liberação automática após pagamento.</div>
             </div>
 
             <div className="row" style={{ marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-              <button className="btn primary" type="button" onClick={onCheckout || (() => window.open(checkoutUrl, "_blank", "noopener,noreferrer"))}>
+              <button className="btn primary" type="button" onClick={open}>
                 Assinar agora
               </button>
               <button className="btn" type="button" onClick={onRefresh}>

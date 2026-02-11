@@ -53,7 +53,6 @@ function drawLine(canvas, pts) {
 
   ctx.clearRect(0, 0, w, h);
 
-  // grid
   ctx.globalAlpha = 0.35;
   ctx.strokeStyle = "#888";
   for (let i = 1; i < 5; i++) {
@@ -83,7 +82,6 @@ function drawLine(canvas, pts) {
     return pad + (1 - (y - minY) / (maxY - minY)) * (h - pad * 2);
   };
 
-  // zero line
   if (minY < 0 && maxY > 0) {
     ctx.globalAlpha = 0.7;
     ctx.strokeStyle = "#bbb";
@@ -102,7 +100,7 @@ function drawLine(canvas, pts) {
 }
 
 export default function Relatorios({ user }) {
-  const [mode, setMode] = useState("mes"); // mes | semana | intervalo
+  const [mode, setMode] = useState("mes");
   const [monthYM, setMonthYM] = useState(() => ymFromDate(new Date()));
   const [weekStr, setWeekStr] = useState("");
   const [ini, setIni] = useState(() => ymd(new Date()));
@@ -168,7 +166,6 @@ export default function Relatorios({ user }) {
   const canvasWrapRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // ✅ Canvas premium: ResizeObserver (sem artefato)
   useEffect(() => {
     const wrap = canvasWrapRef.current;
     const canvas = canvasRef.current;
@@ -188,7 +185,6 @@ export default function Relatorios({ user }) {
       const ctx = canvas.getContext("2d");
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // desenha em pixels CSS (porque setTransform já ajustou)
       drawLine(canvas, daily.map(p => ({ x: p.idx, y: p.val })));
     });
 
@@ -205,15 +201,15 @@ export default function Relatorios({ user }) {
   return (
     <div className="container reportsPage">
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
             <h2>Relatórios</h2>
-            <div className="muted" style={{ fontSize: 13 }}>
+            <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
               Escolha mês, uma semana específica, ou um intervalo.
             </div>
           </div>
 
-          <div className="row">
+          <div className="row" style={{ flex: "1 1 320px", minWidth: 0, justifyContent: "flex-end" }}>
             <button className={"tab " + (mode === "mes" ? "active" : "")} onClick={() => setMode("mes")}>Mês</button>
             <button className={"tab " + (mode === "semana" ? "active" : "")} onClick={() => setMode("semana")}>Semana</button>
             <button className={"tab " + (mode === "intervalo" ? "active" : "")} onClick={() => setMode("intervalo")}>Intervalo</button>
@@ -222,12 +218,12 @@ export default function Relatorios({ user }) {
 
         <div className="hr" />
 
-        <div className="row" style={{ alignItems: "flex-end" }}>
+        <div className="row" style={{ alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
           {mode === "mes" ? (
             <>
               <button className="btn" type="button" onClick={() => setMonthYM(ymFromDate(new Date()))}>Mês atual</button>
               <button className="btn" type="button" onClick={() => setMonthYM(addMonthsYM(monthYM, -1))}>Mês passado</button>
-              <div className="field" style={{ minWidth: 190 }}>
+              <div className="field" style={{ flex: "1 1 190px", minWidth: 0, maxWidth: 260 }}>
                 <div className="label">Escolher mês</div>
                 <input className="input" type="month" value={monthYM} onChange={(e) => setMonthYM(e.target.value)} />
               </div>
@@ -235,7 +231,7 @@ export default function Relatorios({ user }) {
           ) : null}
 
           {mode === "semana" ? (
-            <div className="field" style={{ minWidth: 230 }}>
+            <div className="field" style={{ flex: "1 1 230px", minWidth: 0, maxWidth: 320 }}>
               <div className="label">Escolher semana</div>
               <input className="input" type="week" value={weekStr} onChange={(e) => setWeekStr(e.target.value)} />
             </div>
@@ -243,11 +239,11 @@ export default function Relatorios({ user }) {
 
           {mode === "intervalo" ? (
             <>
-              <div className="field">
+              <div className="field" style={{ flex: "1 1 180px", minWidth: 0, maxWidth: 260 }}>
                 <div className="label">Início</div>
                 <input className="input" type="date" value={ini} onChange={(e) => setIni(e.target.value)} />
               </div>
-              <div className="field">
+              <div className="field" style={{ flex: "1 1 180px", minWidth: 0, maxWidth: 260 }}>
                 <div className="label">Fim</div>
                 <input className="input" type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
               </div>
@@ -255,7 +251,7 @@ export default function Relatorios({ user }) {
             </>
           ) : null}
 
-          <span className="badge" style={{ marginLeft: "auto" }}>
+          <span className="badge" style={{ marginLeft: "auto", maxWidth: "100%", whiteSpace: "normal", lineHeight: 1.2 }}>
             Período: <b>{periodoLabel}</b>
           </span>
         </div>
@@ -265,7 +261,6 @@ export default function Relatorios({ user }) {
 
         <div className="hr" />
 
-        {/* ✅ KPIs premium (não usa .card dentro de .card) */}
         <div className="kpis">
           <div className="kpi">
             <div className="kpiTitle">Resultado (green/loss)</div>
@@ -313,29 +308,31 @@ export default function Relatorios({ user }) {
         <div className="hr" />
 
         <h2>Resultado por dia</h2>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Dia</th>
-              <th>Resultado (green/loss)</th>
-              <th>Depósito</th>
-              <th>Saque</th>
-            </tr>
-          </thead>
-          <tbody>
-            {daily.map((d) => (
-              <tr key={d.day}>
-                <td className="muted">{parseYMDLocal(d.day)?.toLocaleDateString("pt-BR")}</td>
-                <td style={{ fontWeight: 800 }}>{money(d.val)}</td>
-                <td>{money(d.dep)}</td>
-                <td>{money(d.saq)}</td>
+        <div className="tableWrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Dia</th>
+                <th>Resultado (green/loss)</th>
+                <th>Depósito</th>
+                <th>Saque</th>
               </tr>
-            ))}
-            {!daily.length && !loading ? (
-              <tr><td colSpan={4} className="muted">Sem dados no período.</td></tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {daily.map((d) => (
+                <tr key={d.day}>
+                  <td className="muted">{parseYMDLocal(d.day)?.toLocaleDateString("pt-BR")}</td>
+                  <td style={{ fontWeight: 800 }}>{money(d.val)}</td>
+                  <td>{money(d.dep)}</td>
+                  <td>{money(d.saq)}</td>
+                </tr>
+              ))}
+              {!daily.length && !loading ? (
+                <tr><td colSpan={4} className="muted">Sem dados no período.</td></tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

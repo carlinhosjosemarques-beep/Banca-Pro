@@ -87,7 +87,8 @@ export default function Dashboard({ user }) {
           .eq("user_id", user.id)
           .gte("data", wStart)
           .lte("data", wEnd)
-          .order("data", { ascending: false });
+          .order("data", { ascending: false })
+          .order("created_at", { ascending: false });
         if (e2) throw e2;
 
         const { data: monthData, error: e3 } = await supabase
@@ -96,7 +97,8 @@ export default function Dashboard({ user }) {
           .eq("user_id", user.id)
           .gte("data", mStart)
           .lte("data", mEnd)
-          .order("data", { ascending: false });
+          .order("data", { ascending: false })
+          .order("created_at", { ascending: false });
         if (e3) throw e3;
 
         const { data: recentData, error: e4 } = await supabase
@@ -114,10 +116,7 @@ export default function Dashboard({ user }) {
           .eq("user_id", user.id);
         if (e5) throw e5;
 
-        const geral = (allData || []).reduce(
-          (acc, r) => acc + signedValue(r.tipo, r.valor),
-          0
-        );
+        const geral = (allData || []).reduce((acc, r) => acc + signedValue(r.tipo, r.valor), 0);
 
         if (!cancelled) {
           setTodayRows(todayData || []);
@@ -150,32 +149,48 @@ export default function Dashboard({ user }) {
     };
   }, [user.id, todayStr, week.start, week.end, mStart, mEnd]);
 
+  const greenCount = monthRows.filter((r) => r.tipo === "green").length;
+  const lossCount = monthRows.filter((r) => r.tipo === "loss").length;
+
   return (
     <div className="container">
       <div className="card" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div>
+        <div
+          className="row"
+          style={{
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
             <h2>Resumo</h2>
-            <div className="muted" style={{ fontSize: 12 }}>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
               Você pode trocar o mês para ver histórico (mês passado/ano passado).
             </div>
           </div>
 
-          <div className="row">
-            <button className="btn" onClick={() => setMonthYM(ymFromDate(new Date()))}>
+          <div
+            className="row"
+            style={{
+              flex: "1 1 420px",
+              minWidth: 0,
+              justifyContent: "flex-end",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <button className="btn" type="button" onClick={() => setMonthYM(ymFromDate(new Date()))}>
               Mês atual
             </button>
-            <button className="btn" onClick={() => setMonthYM(addMonthsYM(monthYM, -1))}>
+            <button className="btn" type="button" onClick={() => setMonthYM(addMonthsYM(monthYM, -1))}>
               Mês passado
             </button>
-            <div className="field" style={{ minWidth: 170 }}>
+
+            <div className="field" style={{ flex: "1 1 190px", minWidth: 0, maxWidth: 260 }}>
               <div className="label">Escolher mês</div>
-              <input
-                className="input"
-                type="month"
-                value={monthYM}
-                onChange={(e) => setMonthYM(e.target.value)}
-              />
+              <input className="input" type="month" value={monthYM} onChange={(e) => setMonthYM(e.target.value)} />
             </div>
           </div>
         </div>
@@ -184,49 +199,52 @@ export default function Dashboard({ user }) {
         {loading ? <div className="muted" style={{ marginTop: 10 }}>Carregando...</div> : null}
 
         <div className="kpis" style={{ marginTop: 12 }}>
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Banca atual (geral)</h2>
-            <div className="big">{money(saldoGeral)}</div>
-            <div className="muted" style={{ fontSize: 12 }}>Somando tudo desde o início</div>
+          <div className="kpi">
+            <div className="kpiTitle">Banca atual (geral)</div>
+            <div className="kpiValue">{money(saldoGeral)}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Somando tudo desde o início</div>
           </div>
 
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Lucro/Prejuízo (Hoje)</h2>
-            <div className="big">{money(lucroHoje)}</div>
-            <div className="muted" style={{ fontSize: 12 }}>Somente green e loss</div>
+          <div className="kpi">
+            <div className="kpiTitle">Lucro/Prejuízo (Hoje)</div>
+            <div className="kpiValue">{money(lucroHoje)}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Somente green e loss</div>
           </div>
 
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Lucro/Prejuízo (Semana)</h2>
-            <div className="big">{money(lucroSemana)}</div>
-            <div className="muted" style={{ fontSize: 12 }}>Segunda → Domingo</div>
+          <div className="kpi">
+            <div className="kpiTitle">Lucro/Prejuízo (Semana)</div>
+            <div className="kpiValue">{money(lucroSemana)}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Segunda → Domingo</div>
           </div>
 
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Lucro/Prejuízo ({monthYM})</h2>
-            <div className="big">{money(lucroMes)}</div>
-            <div className="muted" style={{ fontSize: 12 }}>Somente green e loss</div>
+          <div className="kpi">
+            <div className="kpiTitle">Lucro/Prejuízo ({monthYM})</div>
+            <div className="kpiValue">{money(lucroMes)}</div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Somente green e loss</div>
           </div>
         </div>
 
         <div className="hr" />
 
         <div className="kpis">
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Depositado ({monthYM})</h2>
-            <div className="big">{money(depMes)}</div>
+          <div className="kpi">
+            <div className="kpiTitle">Depositado ({monthYM})</div>
+            <div className="kpiValue">{money(depMes)}</div>
           </div>
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Sacado ({monthYM})</h2>
-            <div className="big">{money(saqueMes)}</div>
+
+          <div className="kpi">
+            <div className="kpiTitle">Sacado ({monthYM})</div>
+            <div className="kpiValue">{money(saqueMes)}</div>
           </div>
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Greens ({monthYM})</h2>
-            <div className="big">{monthRows.filter((r) => r.tipo === "green").length}</div>
+
+          <div className="kpi">
+            <div className="kpiTitle">Greens ({monthYM})</div>
+            <div className="kpiValue">{greenCount}</div>
           </div>
-          <div className="card" style={{ background: "rgba(255,255,255,.02)" }}>
-            <h2>Losses ({monthYM})</h2>
-            <div className="big">{monthRows.filter((r) => r.tipo === "loss").length}</div>
+
+          <div className="kpi">
+            <div className="kpiTitle">Losses ({monthYM})</div>
+            <div className="kpiValue">{lossCount}</div>
           </div>
         </div>
       </div>
@@ -234,42 +252,47 @@ export default function Dashboard({ user }) {
       <div className="card">
         <h2>Últimas 10 transações</h2>
 
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Tipo</th>
-              <th>Valor</th>
-              <th>Obs</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentRows.map((r) => {
-              const d = parseYMDLocal(r.data);
-              const isPos = r.tipo === "green" || r.tipo === "deposito";
-              return (
-                <tr key={r.id}>
-                  <td className="muted">{d ? d.toLocaleDateString("pt-BR") : r.data}</td>
-                  <td>
-                    <span className="badge">
-                      <span className={"dot " + (r.tipo === "green" ? "ok" : r.tipo === "loss" ? "danger" : "")} />
-                      {typeLabel(r.tipo)}
-                    </span>
-                  </td>
-                  <td style={{ fontWeight: 700 }}>
-                    {isPos ? money(r.valor) : `-${money(r.valor)}`}
-                  </td>
-                  <td className="muted">{r.obs || "-"}</td>
-                </tr>
-              );
-            })}
-            {!recentRows.length ? (
+        <div className="tableWrap" style={{ marginTop: 10 }}>
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={4} className="muted">Sem transações ainda.</td>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Valor</th>
+                <th>Obs</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {recentRows.map((r) => {
+                const d = parseYMDLocal(r.data);
+                const isPos = r.tipo === "green" || r.tipo === "deposito";
+                return (
+                  <tr key={r.id}>
+                    <td className="muted">{d ? d.toLocaleDateString("pt-BR") : r.data}</td>
+                    <td>
+                      <span className="badge">
+                        <span className={"dot " + (r.tipo === "green" ? "ok" : r.tipo === "loss" ? "danger" : "")} />
+                        {typeLabel(r.tipo)}
+                      </span>
+                    </td>
+                    <td style={{ fontWeight: 800 }}>
+                      {isPos ? money(r.valor) : `-${money(r.valor)}`}
+                    </td>
+                    <td className="muted" style={{ maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.obs || "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!recentRows.length ? (
+                <tr>
+                  <td colSpan={4} className="muted">Sem transações ainda.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
