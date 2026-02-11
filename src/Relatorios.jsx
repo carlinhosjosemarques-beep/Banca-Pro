@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 import {
   addMonthsYM,
+  downloadFile,
   money,
   monthStartEndFromYM,
   parseYMDLocal,
   signedValue,
+  toCSV,
   weekToRange,
   ymFromDate,
   ymd
@@ -16,9 +18,11 @@ function sumPnl(rows) {
     .filter(r => r.tipo === "green" || r.tipo === "loss")
     .reduce((a, r) => a + signedValue(r.tipo, r.valor), 0);
 }
+
 function sumByType(rows, tipo) {
   return (rows || []).filter(r => r.tipo === tipo).reduce((a, r) => a + Number(r.valor || 0), 0);
 }
+
 function groupByDay(rows) {
   const map = new Map();
   for (const r of rows || []) {
@@ -30,6 +34,7 @@ function groupByDay(rows) {
   const keys = Array.from(map.keys()).sort();
   return keys.map(k => ({ day: k, rows: map.get(k) }));
 }
+
 function stats(rows) {
   const g = (rows || []).filter(r => r.tipo === "green");
   const l = (rows || []).filter(r => r.tipo === "loss");
@@ -198,6 +203,51 @@ export default function Relatorios({ user }) {
     return `${a ? a.toLocaleDateString("pt-BR") : range.start} → ${b ? b.toLocaleDateString("pt-BR") : range.end}`;
   }, [range.start, range.end]);
 
+  function exportCSV() {
+    const resumoCols = [
+      { label: "Periodo_inicio", value: () => range.start },
+      { label: "Periodo_fim", value: () => range.end },
+      { label: "Resultado_PNL", value: () => pnl },
+      { label: "Depositado", value: () => dep },
+      { label: "Sacado", value: () => saq },
+      { label: "Greens", value: () => st.gc },
+      { label: "Losses", value: () => st.lc },
+      { label: "WinRate_pct", value: () => Number(st.winRate || 0).toFixed(2) },
+      { label: "Media_green", value: () => st.avgG },
+      { label: "Media_loss", value: () => st.avgL },
+      { label: "Maior_green", value: () => st.maxG },
+      { label: "Maior_loss", value: () => st.maxL },
+    ];
+
+    const dailyCols = [
+      { label: "Dia", value: (r) => r.day },
+      { label: "Resultado_green_loss", value: (r) => r.val },
+      { label: "Deposito", value: (r) => r.dep },
+      { label: "Saque", value: (r) => r.saq },
+    ];
+
+    const txCols = [
+      { label: "Data", value: (r) => r.data },
+      { label: "Tipo", value: (r) => r.tipo },
+      { label: "Valor", value: (r) => Number(r.valor || 0) },
+      { label: "Obs", value: (r) => r.obs || "" },
+      { label: "Criado_em", value: (r) => r.created_at || "" },
+    ];
+
+    const resumoCSV = toCSV([{}], resumoCols);
+    const dailyCSV = toCSV(daily || [], dailyCols);
+    const txCSV = toCSV(rows || [], txCols);
+
+    const content =
+      `RESUMO\n${resumoCSV}\n\nRESULTADO_POR_DIA\n${dailyCSV}\n\nTRANSACOES\n${txCSV}\n`;
+
+    downloadFile(
+      `relatorio_${range.start}_a_${range.end}.csv`,
+      content,
+      "text/csv;charset=utf-8"
+    );
+  }
+
   return (
     <div className="container reportsPage">
       <div className="card">
@@ -250,6 +300,10 @@ export default function Relatorios({ user }) {
               <button className="btn" type="button" onClick={load}>Aplicar</button>
             </>
           ) : null}
+
+          <button className="btn" type="button" onClick={exportCSV} disabled={loading}>
+            {loading ? "Carregando..." : "Exportar CSV"}
+          </button>
 
           <span className="badge" style={{ marginLeft: "auto", maxWidth: "100%", whiteSpace: "normal", lineHeight: 1.2 }}>
             Período: <b>{periodoLabel}</b>

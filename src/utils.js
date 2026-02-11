@@ -35,12 +35,14 @@ export function ymFromDate(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
 }
+
 export function monthStartEndFromYM(ym) {
   const [y, m] = ym.split("-").map(Number);
   const start = new Date(y, (m || 1) - 1, 1, 12, 0, 0);
   const end = new Date(y, (m || 1), 0, 12, 0, 0);
   return { start, end };
 }
+
 export function addMonthsYM(ym, delta) {
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(y, (m - 1) + delta, 1, 12, 0, 0);
@@ -94,7 +96,6 @@ export function calcDailyTarget(meta) {
     const days = daysBetween(meta.start_date, meta.end_date).length || 1;
     return total / days;
   }
-  // pct
   const pct = Number(meta.pct_dia || 0) / 100;
   return banca * pct;
 }
@@ -113,4 +114,30 @@ export function redistributeTargets(metaDays, fromIndex, delta) {
     }
   }
   return arr;
+}
+
+/* ===== Export (Relatórios) ===== */
+export function downloadFile(filename, content, mime = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function toCSV(rows, columns) {
+  const esc = (v) => {
+    const s = String(v ?? "");
+    const needs = /[",\n;]/.test(s);
+    const clean = s.replace(/"/g, '""');
+    return needs ? `"${clean}"` : clean;
+  };
+
+  const header = columns.map((c) => esc(c.label)).join(";");
+  const lines = (rows || []).map((r) => columns.map((c) => esc(c.value(r))).join(";"));
+  return [header, ...lines].join("\n");
 }
