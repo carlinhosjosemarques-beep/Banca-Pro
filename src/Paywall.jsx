@@ -54,8 +54,7 @@ export default function Paywall({ displayName, status, onLogout, checkoutUrl, on
             <div className="kpiTitle">Plano Banca Pro</div>
 
             <div className="muted" style={{ marginTop: 10, lineHeight: 1.75 }}>
-              <div><b>R$ 24,99</b> (adesão inicial)</div>
-              <div><b>R$ 10,99/mês</b> (assinatura)</div>
+              <div><b>R$ 24,99</b> (assinatura)</div>
               <div style={{ marginTop: 10 }}>Liberação automática após pagamento.</div>
             </div>
 
