@@ -61,7 +61,7 @@ function IconSun() {
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ display: "block" }}>
       <path
         fill="currentColor"
-        d="M12 18a6 6 0 1 0 0-12a6 6 0 0 0 0 12Zm0-16a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 18a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM4 11a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1Zm18 0a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1ZM5.64 5.64a1 1 0 0 1 1.41 0l.71.71A1 1 0 1 1 6.35 7.76l-.71-.71a1 1 0 0 1 0-1.41Zm12.02 12.02a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41ZM18.36 5.64a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0ZM6.35 16.24a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 0 0 1 0-1.41Z"
+        d="M12 18a6 6 0 1 0 0-12a6 6 0 0 0 0 12Zm0-16a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 18a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM4 11a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1Zm18 0a1 1 0 0 1 1 1a1 1 0 1 1-2 0a1 1 0 0 1 1-1ZM5.64 5.64a1 1 0 0 1 1.41 0l.71.71A1 1 0 1 1 6.35 7.76l-.71-.71a1 1 0 0 1 0-1.41Zm12.02 12.02a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41ZM18.36 5.64a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0ZM6.35 16.24a1 1 0 0 1 1.41 0l.71.71a1 1 0 0 1-1.41 1.41l-.71-.71a1 1 0 0 1 0-1.41Z"
       />
     </svg>
   );
@@ -174,7 +174,7 @@ export default function App() {
       }
 
       if (!data && !error && email) {
-        const r3 = await supabase.from("profiles").select(baseSelect).eq("email", email).maybeSingle();
+        const r3 = await supabase.from("profiles").select(baseSelect).ilike("email", email).maybeSingle();
         data = r3.data;
         error = r3.error;
       }
@@ -356,6 +356,7 @@ export default function App() {
           onLogout={sair}
           onCheckout={openCheckout}
           onRefresh={onAlreadyPaid}
+          priceLabel={"R$ 24,99/mês"}
         />
 
         {profileError ? (
@@ -380,7 +381,7 @@ export default function App() {
           </div>
 
           <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            Se você pagou com outro e-mail, entre com o mesmo e-mail usado no pagamento.
+            Use o mesmo e-mail do pagamento. Se acabou de pagar, toque em “Já paguei, atualizar”.
           </div>
         </div>
       </div>

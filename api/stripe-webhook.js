@@ -3,9 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const config = { api: { bodyParser: false } };
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2026-01-28.clover",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 function buffer(readable) {
   return new Promise((resolve, reject) => {
@@ -16,120 +14,118 @@ function buffer(readable) {
   });
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function addMonths(date, months) {
+function addMonths(date, m) {
   const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
+  d.setMonth(d.getMonth() + m);
   return d;
 }
 
-async function logEvent(supabase, evt, extras = {}) {
-  try {
-    await supabase.from("stripe_event_log").upsert(
-      {
-        event_id: evt?.id ?? null,
-        event_type: evt?.type ?? null,
-        livemode: evt?.livemode ?? null,
-        customer_id: extras.customer_id ?? null,
-        subscription_id: extras.subscription_id ?? null,
-        email: extras.email ?? null,
-        status: extras.status ?? null,
-        error_message: extras.error_message ?? null,
-        payload: extras.payload ?? evt ?? null,
-      },
-      { onConflict: "event_id" }
-    );
-  } catch (_) {}
+function toIsoOrNull(x) {
+  if (!x) return null;
+  const t = new Date(x).getTime();
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
-async function findProfileByEmailOrCustomer(supabase, email, customerId) {
-  if (email) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id,email")
-      .ilike("email", email)
-      .maybeSingle();
-    if (data?.id) return data;
+async function getEmailFromEvent(stripe, event) {
+  const obj = event?.data?.object;
+
+  if (event.type === "checkout.session.completed") {
+    return obj?.customer_email || obj?.customer_details?.email || null;
   }
 
-  if (customerId) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id,email")
-      .eq("stripe_customer_id", customerId)
-      .maybeSingle();
-    if (data?.id) return data;
+  if (event.type.startsWith("invoice.")) {
+    return obj?.customer_email || obj?.customer_details?.email || null;
+  }
+
+  if (event.type.startsWith("customer.subscription.")) {
+    const customerId = typeof obj?.customer === "string" ? obj.customer : obj?.customer?.id;
+    if (!customerId) return null;
+    const c = await stripe.customers.retrieve(customerId);
+    return c?.email || null;
+  }
+
+  if (event.type === "charge.refunded" || event.type === "charge.dispute.created") {
+    const customerId = typeof obj?.customer === "string" ? obj.customer : obj?.customer?.id;
+    if (!customerId) return null;
+    const c = await stripe.customers.retrieve(customerId);
+    return c?.email || null;
   }
 
   return null;
 }
 
-async function upsertSubscriptionRow(supabase, patch) {
-  // usa stripe_subscription_id como “chave” lógica
-  if (!patch?.stripe_subscription_id && !patch?.stripe_customer_id && !patch?.email) return;
+async function resolveStripeIds(stripe, event) {
+  const obj = event?.data?.object || {};
 
-  // tenta achar linha existente por subscription_id
-  let row = null;
-  if (patch.stripe_subscription_id) {
-    const { data } = await supabase
-      .from("subscriptions")
-      .select("id")
-      .eq("stripe_subscription_id", patch.stripe_subscription_id)
-      .maybeSingle();
-    row = data;
+  const customerId =
+    typeof obj?.customer === "string" ? obj.customer : obj?.customer?.id || null;
+
+  let subscriptionId =
+    typeof obj?.subscription === "string"
+      ? obj.subscription
+      : obj?.subscription?.id || null;
+
+  if (!subscriptionId && event.type === "checkout.session.completed") {
+    subscriptionId = obj?.subscription || null;
   }
 
-  if (row?.id) {
-    await supabase.from("subscriptions").update(patch).eq("id", row.id);
-    return;
+  return { customerId, subscriptionId };
+}
+
+async function upsertProfileByEmail(supabase, email, patch) {
+  const e = (email || "").trim().toLowerCase();
+  if (!e) return null;
+
+  const { data: byEmail } = await supabase
+    .from("profiles")
+    .select("id,email")
+    .ilike("email", e)
+    .maybeSingle();
+
+  if (byEmail?.id) {
+    await supabase.from("profiles").update({ ...patch }).eq("id", byEmail.id);
+    return byEmail.id;
   }
 
-  // cria nova
-  await supabase.from("subscriptions").insert(patch);
-}
-
-async function grantPremium(supabase, profileId, payload = {}) {
-  const paidUntil = payload.paid_until ?? addMonths(new Date(), 1).toISOString();
-
-  await supabase
+  const { data: inserted } = await supabase
     .from("profiles")
-    .update({
-      plan: "premium",
-      subscription_status: "active",
-      plan_status: "active",
-      is_premium: true,
-      paid_until: paidUntil,
-      premium_until: paidUntil,
-      blocked_reason: null,
-      stripe_customer_id: payload.stripe_customer_id ?? null,
-      stripe_subscription_id: payload.stripe_subscription_id ?? null,
-      last_paid_event: payload.last_paid_event ?? null,
-      last_paid_at: nowIso(),
-      updated_at: nowIso(),
-    })
-    .eq("id", profileId);
-}
-
-async function blockPremium(supabase, profileId, reason, payload = {}) {
-  await supabase
-    .from("profiles")
-    .update({
+    .insert({
+      email: e,
+      display_name: e.split("@")[0],
       plan: "free",
       subscription_status: "inactive",
       plan_status: "inactive",
       is_premium: false,
-      paid_until: null,
-      premium_until: null,
-      blocked_reason: reason || "blocked",
-      stripe_customer_id: payload.stripe_customer_id ?? null,
-      stripe_subscription_id: payload.stripe_subscription_id ?? null,
-      last_payment_failed_at: payload.failed_at ?? nowIso(),
-      updated_at: nowIso(),
+      updated_at: new Date().toISOString(),
+      ...patch,
     })
-    .eq("id", profileId);
+    .select("id")
+    .maybeSingle();
+
+  return inserted?.id || null;
+}
+
+async function upsertSubscriptionRow(supabase, payload) {
+  const { stripe_subscription_id, stripe_customer_id } = payload;
+
+  if (stripe_subscription_id) {
+    await supabase
+      .from("subscriptions")
+      .upsert(
+        { ...payload, updated_at: new Date().toISOString() },
+        { onConflict: "stripe_subscription_id" }
+      );
+    return;
+  }
+
+  if (stripe_customer_id) {
+    await supabase
+      .from("subscriptions")
+      .upsert(
+        { ...payload, updated_at: new Date().toISOString() },
+        { onConflict: "stripe_customer_id" }
+      );
+  }
 }
 
 export default async function handler(req, res) {
@@ -141,270 +137,170 @@ export default async function handler(req, res) {
     { auth: { persistSession: false } }
   );
 
-  let evt;
+  const buf = await buffer(req);
+  const sig = req.headers["stripe-signature"];
+
+  let event;
   try {
-    const buf = await buffer(req);
-    const sig = req.headers["stripe-signature"];
-    evt = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(
+      buf,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
   } catch (err) {
-    console.log("Webhook signature error:", err?.message);
-    return res.status(400).send(`Webhook Error: ${err?.message}`);
+    console.log("Webhook signature error:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // evita processar 2x em caso de retry do Stripe
-  try {
-    const { data: exists } = await supabase
-      .from("stripe_event_log")
-      .select("id")
-      .eq("event_id", evt.id)
-      .maybeSingle();
-
-    if (exists?.id) return res.status(200).json({ ok: true, duplicate: true });
-  } catch (_) {}
+  const eventId = event?.id;
+  const eventType = event?.type;
 
   try {
-    const type = evt.type;
-    const obj = evt.data.object;
+    if (eventId) {
+      const { data: already } = await supabase
+        .from("stripe_event_log")
+        .select("id")
+        .eq("event_id", eventId)
+        .maybeSingle();
 
-    // helpers p/ email/customer/subscription
-    let email =
-      obj?.customer_email ||
-      obj?.customer_details?.email ||
-      obj?.billing_details?.email ||
-      null;
-
-    let customerId = obj?.customer || obj?.customer_id || null;
-    let subscriptionId = obj?.subscription || obj?.id || null;
-
-    // Quando vier sem email: busca no Stripe
-    if (!email && customerId) {
-      try {
-        const cust = await stripe.customers.retrieve(customerId);
-        if (cust && !cust.deleted) email = cust.email || null;
-      } catch (_) {}
+      if (already?.id) return res.status(200).json({ ok: true, deduped: true });
     }
 
-    // --- EVENTOS DE LIBERAÇÃO ---
-    // 1) checkout.session.completed (Payment Link / Checkout)
-    if (type === "checkout.session.completed") {
-      // nesse evento: subscription pode existir se for assinatura
-      const session = obj;
+    const email = await getEmailFromEvent(stripe, event);
+    const { customerId, subscriptionId } = await resolveStripeIds(stripe, event);
 
-      customerId = session.customer || customerId;
-      subscriptionId = session.subscription || null;
-
-      // pega período pelo subscription (melhor que “+1 mês fixo”)
-      let paidUntil = null;
-      if (subscriptionId) {
-        try {
-          const sub = await stripe.subscriptions.retrieve(subscriptionId);
-          const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end * 1000) : null;
-          paidUntil = periodEnd ? periodEnd.toISOString() : null;
-
-          await upsertSubscriptionRow(supabase, {
-            user_id: null,
-            email,
-            stripe_customer_id: customerId,
-            stripe_subscription_id: subscriptionId,
-            status: sub?.status || "active",
-            cancel_at_period_end: !!sub?.cancel_at_period_end,
-            current_period_end: periodEnd ? periodEnd.toISOString() : null,
-            last_invoice_paid_at: nowIso(),
-            last_event_type: type,
-          });
-        } catch (_) {}
-      }
-
-      const profile = await findProfileByEmailOrCustomer(supabase, email, customerId);
-      if (profile?.id) {
-        await grantPremium(supabase, profile.id, {
-          paid_until: paidUntil ?? addMonths(new Date(), 1).toISOString(),
-          stripe_customer_id: customerId,
-          stripe_subscription_id: subscriptionId,
-          last_paid_event: type,
-        });
-
-        // amarra user_id na subscriptions (se existir linha)
-        if (subscriptionId) {
-          await supabase
-            .from("subscriptions")
-            .update({ user_id: profile.id, updated_at: nowIso() })
-            .eq("stripe_subscription_id", subscriptionId);
-        }
-      }
-
-      await logEvent(supabase, evt, {
-        status: "processed",
-        email,
-        customer_id: customerId,
-        subscription_id: subscriptionId,
-      });
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // 2) invoice.payment_succeeded (renovação mensal)
-    if (type === "invoice.payment_succeeded") {
-      const invoice = obj;
-
-      customerId = invoice.customer || customerId;
-      subscriptionId = invoice.subscription || subscriptionId;
-
-      let paidUntil = null;
-      try {
-        if (subscriptionId) {
-          const sub = await stripe.subscriptions.retrieve(subscriptionId);
-          const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end * 1000) : null;
-          paidUntil = periodEnd ? periodEnd.toISOString() : null;
-
-          await upsertSubscriptionRow(supabase, {
-            email,
-            stripe_customer_id: customerId,
-            stripe_subscription_id: subscriptionId,
-            status: sub?.status || "active",
-            cancel_at_period_end: !!sub?.cancel_at_period_end,
-            current_period_end: periodEnd ? periodEnd.toISOString() : null,
-            last_invoice_paid_at: nowIso(),
-            last_event_type: type,
-          });
-        }
-      } catch (_) {}
-
-      const profile = await findProfileByEmailOrCustomer(supabase, email, customerId);
-      if (profile?.id) {
-        await grantPremium(supabase, profile.id, {
-          paid_until: paidUntil ?? addMonths(new Date(), 1).toISOString(),
-          stripe_customer_id: customerId,
-          stripe_subscription_id: subscriptionId,
-          last_paid_event: type,
-        });
-
-        if (subscriptionId) {
-          await supabase
-            .from("subscriptions")
-            .update({ user_id: profile.id, updated_at: nowIso() })
-            .eq("stripe_subscription_id", subscriptionId);
-        }
-      }
-
-      await logEvent(supabase, evt, {
-        status: "processed",
-        email,
-        customer_id: customerId,
-        subscription_id: subscriptionId,
-      });
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // --- EVENTOS DE BLOQUEIO ---
-    // pagamento falhou / atrasou
-    if (type === "invoice.payment_failed") {
-      const invoice = obj;
-      customerId = invoice.customer || customerId;
-      subscriptionId = invoice.subscription || subscriptionId;
-
-      await upsertSubscriptionRow(supabase, {
-        email,
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-        status: "past_due",
-        last_invoice_failed_at: nowIso(),
-        last_event_type: type,
-      });
-
-      const profile = await findProfileByEmailOrCustomer(supabase, email, customerId);
-      if (profile?.id) {
-        await blockPremium(supabase, profile.id, "Pagamento falhou (past_due)", {
-          stripe_customer_id: customerId,
-          stripe_subscription_id: subscriptionId,
-          failed_at: nowIso(),
-        });
-      }
-
-      await logEvent(supabase, evt, {
-        status: "processed",
-        email,
-        customer_id: customerId,
-        subscription_id: subscriptionId,
-      });
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // cancelada
-    if (type === "customer.subscription.deleted") {
-      const sub = obj;
-      customerId = sub.customer || customerId;
-      subscriptionId = sub.id || subscriptionId;
-
-      await upsertSubscriptionRow(supabase, {
-        email,
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-        status: "canceled",
-        last_event_type: type,
-      });
-
-      const profile = await findProfileByEmailOrCustomer(supabase, email, customerId);
-      if (profile?.id) {
-        await blockPremium(supabase, profile.id, "Assinatura cancelada", {
-          stripe_customer_id: customerId,
-          stripe_subscription_id: subscriptionId,
-        });
-      }
-
-      await logEvent(supabase, evt, {
-        status: "processed",
-        email,
-        customer_id: customerId,
-        subscription_id: subscriptionId,
-      });
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // estorno (refund)
-    if (type === "charge.refunded") {
-      const charge = obj;
-      customerId = charge.customer || customerId;
-
-      const profile = await findProfileByEmailOrCustomer(supabase, email, customerId);
-      if (profile?.id) {
-        await blockPremium(supabase, profile.id, "Pagamento estornado", {
-          stripe_customer_id: customerId,
-          stripe_subscription_id: null,
-          failed_at: nowIso(),
-        });
-      }
-
-      await logEvent(supabase, evt, {
-        status: "processed",
-        email,
-        customer_id: customerId,
-        subscription_id: null,
-      });
-
-      return res.status(200).json({ ok: true });
-    }
-
-    // evento não tratado (logar e ok)
-    await logEvent(supabase, evt, {
-      status: "ignored",
-      email,
-      customer_id: customerId,
-      subscription_id: subscriptionId,
+    await supabase.from("stripe_event_log").insert({
+      event_id: eventId || null,
+      type: eventType || null,
+      livemode: !!event?.livemode,
+      created_ts: event?.created || null,
+      email: email || null,
+      stripe_customer_id: customerId || null,
+      stripe_subscription_id: subscriptionId || null,
+      payload: event || null,
     });
 
-    return res.status(200).json({ ok: true, ignored: true });
-  } catch (err) {
-    await logEvent(supabase, evt, {
-      status: "error",
-      error_message: err?.message || "error",
-      payload: evt,
-    });
+    const nowIso = new Date().toISOString();
 
-    console.log("WEBHOOK ERROR:", err);
-    return res.status(200).json({ ok: true }); // stripe prefere 200 p/ não retry infinito
+    const grant = async (periodEndIso) => {
+      const paidUntilIso = periodEndIso || addMonths(new Date(), 1).toISOString();
+
+      const profileId = await upsertProfileByEmail(supabase, email, {
+        plan: "premium",
+        subscription_status: "active",
+        plan_status: "active",
+        is_premium: true,
+        paid_until: paidUntilIso,
+        premium_until: paidUntilIso,
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        updated_at: nowIso,
+      });
+
+      await upsertSubscriptionRow(supabase, {
+        user_id: profileId,
+        email: email || null,
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        status: "active",
+        current_period_end: paidUntilIso,
+        cancel_at_period_end: false,
+      });
+    };
+
+    const block = async (reason) => {
+      const profileId = await upsertProfileByEmail(supabase, email, {
+        plan: "free",
+        subscription_status: "inactive",
+        plan_status: "inactive",
+        is_premium: false,
+        paid_until: null,
+        premium_until: null,
+        updated_at: nowIso,
+      });
+
+      await upsertSubscriptionRow(supabase, {
+        user_id: profileId,
+        email: email || null,
+        stripe_customer_id: customerId || null,
+        stripe_subscription_id: subscriptionId || null,
+        status: reason || "inactive",
+        current_period_end: null,
+        cancel_at_period_end: false,
+      });
+    };
+
+    if (eventType === "checkout.session.completed") {
+      const session = event.data.object;
+      const mode = session?.mode;
+
+      if (mode === "subscription") {
+        if (subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+          const cpe = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+          const st = (sub?.status || "").toLowerCase();
+          if (st === "active" || st === "trialing") await grant(cpe);
+          else await block(st || "inactive");
+        } else {
+          await grant(null);
+        }
+      } else {
+        await grant(addMonths(new Date(), 1).toISOString());
+      }
+    }
+
+    if (eventType === "invoice.payment_succeeded" || eventType === "invoice.paid") {
+      const inv = event.data.object;
+      const cpe = inv?.lines?.data?.[0]?.period?.end
+        ? new Date(inv.lines.data[0].period.end * 1000).toISOString()
+        : null;
+      await grant(cpe);
+    }
+
+    if (eventType === "customer.subscription.created" || eventType === "customer.subscription.updated") {
+      const sub = event.data.object;
+      const st = (sub?.status || "").toLowerCase();
+      const cpe = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+      const cancelAtPeriodEnd = !!sub?.cancel_at_period_end;
+
+      if (st === "active" || st === "trialing") {
+        await grant(cpe);
+
+        await upsertSubscriptionRow(supabase, {
+          user_id: null,
+          email: email || null,
+          stripe_customer_id: customerId || null,
+          stripe_subscription_id: subscriptionId || sub?.id || null,
+          status: st,
+          current_period_end: cpe,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          price_id: sub?.items?.data?.[0]?.price?.id || null,
+          product_id: sub?.items?.data?.[0]?.price?.product || null,
+        });
+      } else {
+        await block(st || "inactive");
+      }
+    }
+
+    if (eventType === "invoice.payment_failed") {
+      await block("payment_failed");
+    }
+
+    if (eventType === "customer.subscription.deleted") {
+      await block("canceled");
+    }
+
+    if (eventType === "charge.refunded") {
+      await block("refunded");
+    }
+
+    if (eventType === "charge.dispute.created") {
+      await block("dispute");
+    }
+
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.log("WEBHOOK_ERROR:", e?.message || e);
+    return res.status(200).json({ ok: true });
   }
 }
